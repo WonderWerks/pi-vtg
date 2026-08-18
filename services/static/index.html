@@ -69,7 +69,10 @@
   <div class="row"><label><input type="checkbox" id="osd-url"> Show web UI port</label></div>
   <div class="row"><label><input type="checkbox" id="osd-errors"> Show errors</label></div>
   <input type="text" id="osd-custom-message" maxlength="80" placeholder="Custom message (overrides the above, max 80 chars)">
-  <button class="primary" onclick="saveOsdConfig()">Save OSD settings</button>
+  <div class="row">
+    <button onclick="clearOsdMessage()">Clear Custom Message</button>
+    <button class="primary" onclick="saveOsdConfig()">Save OSD settings</button>
+  </div>
   <div class="status" id="status-osd"></div>
 </div>
 
@@ -411,6 +414,11 @@ async function saveOsdConfig() {
   } catch (e) {
     document.getElementById("status-osd").textContent = "Save request failed.";
   }
+}
+
+function clearOsdMessage() {
+  document.getElementById("osd-custom-message").value = "";
+  saveOsdConfig();
 }
 
 async function cecCommand(cmd) {
