@@ -125,7 +125,7 @@ def get_osd_config():
 def set_osd_config():
     STATE_DIR.mkdir(exist_ok=True)
     cfg = {**OSD_DEFAULTS, **(request.json or {})}
-        cfg["custom_message"] = (cfg.get("custom_message") or "")[:80]
+    cfg["custom_message"] = (cfg.get("custom_message") or "")[:80]
     with open(OSD_CONFIG_PATH, "w") as f:
         json.dump(cfg, f)
     return jsonify({"success": True})

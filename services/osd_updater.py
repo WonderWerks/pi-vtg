@@ -63,7 +63,7 @@ def build_status_text(cfg):
     lines = []
     if cfg.get("show_ip", True):
         lines.append(f"eth0: {get_ip('eth0') or 'not connected'}")
-        lines.append(f"wlan0: {get_ip('wlan0') or 'not connected ¯\_(ツ)_/¯'}")
+        lines.append(f"wlan0: {get_ip('wlan0') or 'not connected'}")
     if cfg.get("show_ssid", True):
         lines.append(f"SSID: {get_wifi_ssid() or 'not connected'}")
     if cfg.get("show_web_url", True):
