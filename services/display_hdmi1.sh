@@ -24,4 +24,5 @@ exec mpv --idle=yes \
     --image-display-duration=5 \
     --loop-playlist=inf \
     --quiet \
-    --msg-level=vo=error
+    --msg-level=vo=error \
+    ~/vtg_gen2/media/no_signal.jpeg

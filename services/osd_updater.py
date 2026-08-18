@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Persistent OSD updater. Sets mpv's built-in status-message OSD line
-on whichever instance currently owns the display. Controlled by
+on every currently-reachable display output. Controlled by
 state/osd_config.json."""
 import json
 import subprocess
@@ -10,7 +10,7 @@ from mpv_ipc import MpvIPC, MpvIPCError
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_PATH = BASE_DIR / "state" / "osd_config.json"
-SOCKETS = ["/tmp/vtg-display.sock"]
+SOCKETS = ["/tmp/vtg-display.sock", "/tmp/vtg-display-hdmi1.sock"]
 PORT = 5000
 POLL_SECONDS = 5
 MAX_MESSAGE_LEN = 80
@@ -74,26 +74,20 @@ def build_status_text(cfg):
                 lines.append(f"ERROR: {svc} not running")
     return "\n".join(lines)
 
-def find_active_mpv():
-    for sock in SOCKETS:
-        try:
-            return MpvIPC(sock, connect_timeout=1)
-        except MpvIPCError:
-            continue
-    return None
+def set_osd_on_socket(sock, text):
+    try:
+        mpv = MpvIPC(sock, connect_timeout=1)
+        mpv.set_property("osd-status-msg", text)
+        mpv.close()
+    except MpvIPCError:
+        pass
 
 def main():
     while True:
         cfg = load_config()
-        mpv = find_active_mpv()
-        if mpv:
-            try:
-                text = build_status_text(cfg) if cfg.get("enabled", True) else ""
-                mpv.set_property("osd-status-msg", text)
-            except MpvIPCError:
-                pass
-            finally:
-                mpv.close()
+        text = build_status_text(cfg) if cfg.get("enabled", True) else ""
+        for sock in SOCKETS:
+            set_osd_on_socket(sock, text)
         time.sleep(POLL_SECONDS)
 
 if __name__ == "__main__":
