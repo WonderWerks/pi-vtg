@@ -119,12 +119,6 @@ class MpvIPC:
     def set_mute(self, muted):
         self.set_property("mute", bool(muted))
 
-    def osd_overlay(self, overlay_id, ass_text, res_x=1280, res_y=720):
-        self.command("osd-overlay", overlay_id, "ass-events", ass_text, res_x, res_y)
-
-    def clear_osd_overlay(self, overlay_id):
-        self.command("osd-overlay", overlay_id, "none", "")
-
     def status(self):
         """Best-effort status snapshot. Missing properties (e.g. no file
         loaded yet) are reported as None rather than raising."""

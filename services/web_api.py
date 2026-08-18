@@ -110,7 +110,7 @@ def set_image_speed():
 
 STATE_DIR = MEDIA_DIR.parent / "state"
 OSD_CONFIG_PATH = STATE_DIR / "osd_config.json"
-OSD_DEFAULTS = {"enabled": True, "show_ip": True, "show_web_url": True, "show_errors": True}
+OSD_DEFAULTS = {"enabled": True, "show_ip": True, "show_web_url": True, "show_errors": True, "show_ssid": True, "custom_message": ""}
 
 @app.route("/api/osd/config", methods=["GET"])
 def get_osd_config():
@@ -125,6 +125,7 @@ def get_osd_config():
 def set_osd_config():
     STATE_DIR.mkdir(exist_ok=True)
     cfg = {**OSD_DEFAULTS, **(request.json or {})}
+        cfg["custom_message"] = (cfg.get("custom_message") or "")[:80]
     with open(OSD_CONFIG_PATH, "w") as f:
         json.dump(cfg, f)
     return jsonify({"success": True})

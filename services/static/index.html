@@ -54,11 +54,6 @@
     <button onclick="cecCommand('power_on')">Power On</button>
     <button onclick="cecCommand('power_off')">Power Off</button>
   </div>
-  <div class="row">
-    <button onclick="cecCommand('volume_up')">Vol +</button>
-    <button onclick="cecCommand('volume_down')">Vol -</button>
-    <button onclick="cecCommand('mute')">Mute</button>
-  </div>
   <input type="text" id="cec-custom" placeholder="Custom CEC command args (e.g. --to 0 --standby)">
   <div class="row">
     <button class="primary" onclick="sendCecCustom()">Send custom command</button>
@@ -70,8 +65,10 @@
   <h2>OSD</h2>
   <div class="row"><label><input type="checkbox" id="osd-enabled"> Enabled</label></div>
   <div class="row"><label><input type="checkbox" id="osd-ip"> Show IP addresses</label></div>
-  <div class="row"><label><input type="checkbox" id="osd-url"> Show web UI URL</label></div>
+  <div class="row"><label><input type="checkbox" id="osd-ssid"> Show SSID</label></div>
+  <div class="row"><label><input type="checkbox" id="osd-url"> Show web UI port</label></div>
   <div class="row"><label><input type="checkbox" id="osd-errors"> Show errors</label></div>
+  <input type="text" id="osd-custom-message" maxlength="80" placeholder="Custom message (overrides the above, max 80 chars)">
   <button class="primary" onclick="saveOsdConfig()">Save OSD settings</button>
   <div class="status" id="status-osd"></div>
 </div>
@@ -382,8 +379,10 @@ async function loadOsdConfig() {
     const c = data.config;
     document.getElementById("osd-enabled").checked = c.enabled;
     document.getElementById("osd-ip").checked = c.show_ip;
+    document.getElementById("osd-ssid").checked = c.show_ssid;
     document.getElementById("osd-url").checked = c.show_web_url;
     document.getElementById("osd-errors").checked = c.show_errors;
+    document.getElementById("osd-custom-message").value = c.custom_message || "";
   } catch (e) {
     document.getElementById("status-osd").textContent = "Could not load OSD config.";
   }
@@ -393,8 +392,10 @@ async function saveOsdConfig() {
   const body = {
     enabled: document.getElementById("osd-enabled").checked,
     show_ip: document.getElementById("osd-ip").checked,
+    show_ssid: document.getElementById("osd-ssid").checked,
     show_web_url: document.getElementById("osd-url").checked,
-    show_errors: document.getElementById("osd-errors").checked
+    show_errors: document.getElementById("osd-errors").checked,
+    custom_message: document.getElementById("osd-custom-message").value
   };
   try {
     const res = await fetch("/api/osd/config", {
@@ -412,12 +413,8 @@ async function saveOsdConfig() {
   }
 }
 
-function getCecDevice() {
-  return document.getElementById("cec-device").value;
-}
-
 async function cecCommand(cmd) {
-  const device = getCecDevice();
+  const device = document.getElementById("cec-device").value;
   try {
     const res = await fetch(`/api/cec/${device}/${cmd}`, { method: "POST" });
     const data = await res.json();
@@ -428,7 +425,7 @@ async function cecCommand(cmd) {
 }
 
 async function sendCecCustom() {
-  const device = getCecDevice();
+  const device = document.getElementById("cec-device").value;
   const value = document.getElementById("cec-custom").value;
   if (!value) { setStatusMsg("cec", "Enter a command string first.", false); return; }
   try {
