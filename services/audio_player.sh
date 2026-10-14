@@ -10,4 +10,4 @@ exec mpv --idle=yes \
     --audio-device=alsa/plughw:CARD=Headphones,DEV=0 \
     --loop-playlist=inf \
     --msg-level=vo=error \
-    ~/vtg_gen2/media/audio/*
+    ~/pi-vtg/media/audio/*

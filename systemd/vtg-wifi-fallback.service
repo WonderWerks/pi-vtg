@@ -4,4 +4,4 @@ Description=VTG Wifi Fallback Check
 
 [Service]
 Type=oneshot
-ExecStart=/bin/bash /home/vtg/vtg_gen2/services/wifi_fallback.sh
+ExecStart=/bin/bash /home/vtg/pi-vtg/services/wifi_fallback.sh

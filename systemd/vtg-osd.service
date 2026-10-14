@@ -5,8 +5,8 @@ After=network.target vtg-video.service vtg-image.service vtg-web.service
 [Service]
 Type=simple
 User=vtg
-WorkingDirectory=/home/vtg/vtg_gen2/services
-ExecStart=/usr/bin/python3 /home/vtg/vtg_gen2/services/osd_updater.py
+WorkingDirectory=/home/vtg/pi-vtg/services
+ExecStart=/usr/bin/python3 /home/vtg/pi-vtg/services/osd_updater.py
 Restart=always
 RestartSec=3
 

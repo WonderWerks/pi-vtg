@@ -48,4 +48,4 @@ exec mpv --idle=yes \
     --loop-playlist=inf \
     --quiet \
     --msg-level=vo=error \
-    ~/vtg_gen2/media/video/*
+    ~/pi-vtg/media/video/*

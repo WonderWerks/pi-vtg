@@ -5,8 +5,8 @@ After=network.target
 [Service]
 Type=simple
 User=vtg
-WorkingDirectory=/home/vtg/vtg_gen2/services
-ExecStart=/bin/bash /home/vtg/vtg_gen2/services/display_player.sh
+WorkingDirectory=/home/vtg/pi-vtg/services
+ExecStart=/bin/bash /home/vtg/pi-vtg/services/display_player.sh
 Restart=always
 RestartSec=3
 
