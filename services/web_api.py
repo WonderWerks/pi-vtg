@@ -222,7 +222,7 @@ def restart_service(service):
 @app.route("/api/system/wifi-check", methods=["POST"])
 def wifi_check_now():
     try:
-        subprocess.run(["/home/vtg/vtg_gen2/services/wifi_fallback.sh"], timeout=15)
+        subprocess.run(["/bin/bash", "/home/vtg/vtg_gen2/services/wifi_fallback.sh"], timeout=45)
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
