@@ -136,6 +136,7 @@ class MpvIPC:
             "core-idle",
             "loop-playlist",
             "loop-file",
+            "af",
             "display-width",
             "display-height",
             "display-fps",

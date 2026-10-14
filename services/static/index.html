@@ -12,11 +12,11 @@
   h1 { font-size:20px; margin:20px 0 16px; text-align:center; }
   .panel { background:#1c1c1c; border:1px solid #333; border-radius:10px; padding:18px; margin-bottom:16px; }
   h2 { font-size:17px; margin:0 0 12px; display:flex; align-items:center; gap:8px; }
-  .badge { font-size:10px; padding:2px 8px; border-radius:10px; background:#333; color:#999; text-transform:uppercase; letter-spacing:0.5px; }
   .nowplaying { font-size:13px; color:#9fd; margin-bottom:14px; min-height:18px; }
   select, input[type=number], input[type=text] { width:100%; padding:10px; margin-bottom:10px; background:#222; color:#eee; border:1px solid #444; border-radius:6px; font-size:14px; }
   .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; align-items:center; }
   .row select, .row input[type=number] { margin-bottom:0; }
+  .row label { font-size:14px; display:flex; align-items:center; gap:6px; margin-right:12px; }
   button { flex:1; min-width:70px; padding:12px 10px; border:none; border-radius:6px; background:#333; color:#eee; cursor:pointer; font-size:14px; }
   button:hover:not(:disabled) { background:#444; }
   button:disabled { opacity:0.4; cursor:not-allowed; }
@@ -31,7 +31,6 @@
   .vol-row { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
   .vol-row input[type=range] { flex:1; }
   .vol-row label { font-size:13px; white-space:nowrap; display:flex; align-items:center; gap:6px; }
-  .coming-soon { color:#777; font-size:13px; font-style:italic; margin-bottom:10px; }
   .error-list { font-size:13px; margin:0; padding-left:18px; }
   .error-list li { color:#f77; margin-bottom:4px; }
   .display-info { font-size:13px; color:#9fd; margin-bottom:10px; }
@@ -64,9 +63,12 @@
 <div class="panel">
   <h2>OSD</h2>
   <div class="row"><label><input type="checkbox" id="osd-enabled"> Enabled</label></div>
+  <div class="row"><label><input type="checkbox" id="osd-datetime"> Show date/time</label></div>
   <div class="row"><label><input type="checkbox" id="osd-ip"> Show IP addresses</label></div>
   <div class="row"><label><input type="checkbox" id="osd-ssid"> Show SSID</label></div>
   <div class="row"><label><input type="checkbox" id="osd-url"> Show web UI port</label></div>
+  <div class="row"><label><input type="checkbox" id="osd-nowplaying"> Show now playing (video/images)</label></div>
+  <div class="row"><label><input type="checkbox" id="osd-audiotrack"> Show audio track</label></div>
   <div class="row"><label><input type="checkbox" id="osd-errors"> Show errors</label></div>
   <input type="text" id="osd-custom-message" maxlength="80" placeholder="Custom message (overrides the above, max 80 chars)">
   <div class="row">
@@ -136,6 +138,7 @@ function render() {
         <div class="row">
           <label><input type="checkbox" id="loop-playlist-${t.id}" onchange="onLoopToggle('${t.id}','playlist')"> 🔁 Loop</label>
           <label><input type="checkbox" id="loop-file-${t.id}" onchange="onLoopToggle('${t.id}','file')"> 🔂 Repeat One</label>
+          <label><input type="checkbox" id="mono-${t.id}" onchange="onMonoToggle('${t.id}')"> Mono Output</label>
         </div>
       ` : ""}
 
@@ -252,6 +255,21 @@ async function onLoopToggle(id, type) {
   }
 }
 
+async function onMonoToggle(id) {
+  const enabled = document.getElementById(`mono-${id}`).checked;
+  try {
+    const res = await fetch(`/api/mono/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled })
+    });
+    const data = await res.json();
+    setStatusMsg(id, data.success ? (enabled ? "Mono output on." : "Stereo output restored.") : (data.message || "Mono toggle failed."), data.success);
+  } catch (e) {
+    setStatusMsg(id, "Mono request failed.", false);
+  }
+}
+
 let volumeDebounce = {};
 function onVolumeInput(id) {
   clearTimeout(volumeDebounce[id]);
@@ -308,6 +326,11 @@ function fmt(t) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+function syncCheckbox(elId, value) {
+  const box = document.getElementById(elId);
+  if (box && document.activeElement !== box) box.checked = !!value;
+}
+
 async function pollStatus() {
   for (const t of targets) {
     const el = document.getElementById(`np-${t.id}`);
@@ -316,16 +339,10 @@ async function pollStatus() {
       const data = await res.json();
       if (!data.success) { el.textContent = "Player not responding."; continue; }
       const s = data.status;
-      const muteBox = document.getElementById(`mute-${t.id}`);
-      if (muteBox && document.activeElement !== muteBox) muteBox.checked = !!s.mute;
-      const loopPlaylistBox = document.getElementById(`loop-playlist-${t.id}`);
-      if (loopPlaylistBox && document.activeElement !== loopPlaylistBox) {
-        loopPlaylistBox.checked = !!s["loop-playlist"] && s["loop-playlist"] !== "no";
-      }
-      const loopFileBox = document.getElementById(`loop-file-${t.id}`);
-      if (loopFileBox && document.activeElement !== loopFileBox) {
-        loopFileBox.checked = !!s["loop-file"] && s["loop-file"] !== "no";
-      }
+      syncCheckbox(`mute-${t.id}`, s.mute);
+      syncCheckbox(`loop-playlist-${t.id}`, s["loop-playlist"] && s["loop-playlist"] !== "no");
+      syncCheckbox(`loop-file-${t.id}`, s["loop-file"] && s["loop-file"] !== "no");
+      syncCheckbox(`mono-${t.id}`, (s.af || []).some(f => f.label === "mono"));
       if (!s.filename) { el.textContent = "Nothing loaded."; continue; }
       const state = s.pause ? "Paused" : "Playing";
       el.textContent = `${state} — ${s.filename} (${fmt(s["time-pos"])} / ${fmt(s.duration)})`;
@@ -375,16 +392,25 @@ async function pollErrorsAndDisplay() {
   }
 }
 
+const OSD_FIELDS = [
+  ["osd-enabled", "enabled"],
+  ["osd-datetime", "show_datetime"],
+  ["osd-ip", "show_ip"],
+  ["osd-ssid", "show_ssid"],
+  ["osd-url", "show_web_url"],
+  ["osd-nowplaying", "show_now_playing"],
+  ["osd-audiotrack", "show_audio_track"],
+  ["osd-errors", "show_errors"]
+];
+
 async function loadOsdConfig() {
   try {
     const res = await fetch("/api/osd/config");
     const data = await res.json();
     const c = data.config;
-    document.getElementById("osd-enabled").checked = c.enabled;
-    document.getElementById("osd-ip").checked = c.show_ip;
-    document.getElementById("osd-ssid").checked = c.show_ssid;
-    document.getElementById("osd-url").checked = c.show_web_url;
-    document.getElementById("osd-errors").checked = c.show_errors;
+    OSD_FIELDS.forEach(([elId, key]) => {
+      document.getElementById(elId).checked = c[key] !== false;
+    });
     document.getElementById("osd-custom-message").value = c.custom_message || "";
   } catch (e) {
     document.getElementById("status-osd").textContent = "Could not load OSD config.";
@@ -392,14 +418,11 @@ async function loadOsdConfig() {
 }
 
 async function saveOsdConfig() {
-  const body = {
-    enabled: document.getElementById("osd-enabled").checked,
-    show_ip: document.getElementById("osd-ip").checked,
-    show_ssid: document.getElementById("osd-ssid").checked,
-    show_web_url: document.getElementById("osd-url").checked,
-    show_errors: document.getElementById("osd-errors").checked,
-    custom_message: document.getElementById("osd-custom-message").value
-  };
+  const body = {};
+  OSD_FIELDS.forEach(([elId, key]) => {
+    body[key] = document.getElementById(elId).checked;
+  });
+  body.custom_message = document.getElementById("osd-custom-message").value;
   try {
     const res = await fetch("/api/osd/config", {
       method: "POST",

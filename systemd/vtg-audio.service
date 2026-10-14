@@ -6,7 +6,7 @@ After=network.target sound.target
 Type=simple
 User=vtg
 WorkingDirectory=/home/vtg/vtg_gen2/services
-ExecStart=/home/vtg/vtg_gen2/services/audio_player.sh
+ExecStart=/bin/bash /home/vtg/vtg_gen2/services/audio_player.sh
 Restart=always
 RestartSec=3
 

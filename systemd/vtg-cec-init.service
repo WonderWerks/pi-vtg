@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/home/vtg/vtg_gen2/services/cec_init.sh
+ExecStart=/bin/bash /home/vtg/vtg_gen2/services/cec_init.sh
 RemainAfterExit=yes
 
 [Install]

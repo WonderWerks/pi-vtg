@@ -110,7 +110,7 @@ def set_image_speed():
 
 STATE_DIR = MEDIA_DIR.parent / "state"
 OSD_CONFIG_PATH = STATE_DIR / "osd_config.json"
-OSD_DEFAULTS = {"enabled": True, "show_ip": True, "show_web_url": True, "show_errors": True, "show_ssid": True, "custom_message": ""}
+OSD_DEFAULTS = {"enabled": True, "show_ip": True, "show_web_url": True, "show_errors": True, "show_ssid": True, "show_datetime": True, "show_now_playing": True, "show_audio_track": True, "custom_message": ""}
 
 @app.route("/api/osd/config", methods=["GET"])
 def get_osd_config():
@@ -269,6 +269,24 @@ def cec_volume_down(device):
 @app.route("/api/cec/<device>/mute", methods=["POST"])
 def cec_mute(device):
     return jsonify({"success": False, "message": "Not yet validated — try the custom command box first."})
+
+MONO_FILTER = "@mono:lavfi=[pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1]"
+
+@app.route("/api/mono/<target>", methods=["POST"])
+def set_mono(target):
+    enabled = bool((request.json or {}).get("enabled"))
+    try:
+        mpv = get_mpv(target)
+        try:
+            mpv.command("af", "remove", "@mono")
+        except MpvIPCError:
+            pass
+        if enabled:
+            mpv.command("af", "add", MONO_FILTER)
+        mpv.close()
+        return jsonify({"success": True})
+    except MpvIPCError as e:
+        return jsonify({"success": False, "message": str(e)}), 503
     
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
