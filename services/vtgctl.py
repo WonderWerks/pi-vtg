@@ -8,7 +8,7 @@
 import sys
 from mpv_ipc import MpvIPC
 
-SOCKETS = {"video": "/tmp/vtg-video.sock", "audio": "/tmp/vtg-audio.sock"}
+SOCKETS = {"video": "/tmp/vtg-display.sock", "audio": "/tmp/vtg-audio.sock"}
 
 def main():
     if len(sys.argv) < 3:
