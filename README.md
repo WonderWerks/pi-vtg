@@ -123,20 +123,17 @@ sudo systemctl enable vtg-display.service vtg-audio.service vtg-osd.service vtg-
 
 The unit files are symlinked rather than copied, so a `git pull` updates them too.
 
-### 7. Check permissions and reboot
+### 7. Allow the web UI's restart and reboot buttons
 
-The web UI's Restart and Reboot buttons need passwordless `sudo`, and the players need access to the display and audio devices. The user created by Raspberry Pi Imager has both by default. Check:
+The web UI runs as `vtg` and needs `sudo` for exactly three commands. Grant only those:
 
-```bash
-sudo -n true && echo "passwordless sudo OK"
-groups | grep -qw video && groups | grep -qw audio && groups | grep -qw render && echo "groups OK"
-```
+    echo 'vtg ALL=(root) NOPASSWD: /usr/bin/systemctl restart vtg-display.service, /usr/bin/systemctl restart vtg-audio.service, /usr/sbin/reboot' | sudo tee /etc/sudoers.d/pi-vtg
+    sudo chmod 440 /etc/sudoers.d/pi-vtg
+    sudo visudo -cf /etc/sudoers.d/pi-vtg
 
-Both lines should print OK. Then:
+The last command should print `parsed OK`. Then check device access:
 
-```bash
-sudo reboot
-```
+    groups | grep -qw video && groups | grep -qw audio && groups | grep -qw render && echo "groups OK"
 
 ### 8. Verify
 
