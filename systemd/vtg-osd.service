@@ -1,6 +1,6 @@
 [Unit]
 Description=VTG OSD Updater
-After=network.target vtg-video.service vtg-image.service vtg-web.service
+After=network.target vtg-display.service vtg-web.service
 
 [Service]
 Type=simple

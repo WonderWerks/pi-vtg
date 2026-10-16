@@ -1,6 +1,6 @@
 [Unit]
 Description=VTG Web Test UI
-After=network.target vtg-video.service vtg-audio.service
+After=network.target vtg-display.service vtg-audio.service
 
 [Service]
 Type=simple

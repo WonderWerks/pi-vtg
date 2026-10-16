@@ -8,6 +8,8 @@
 # to the other port later, restart this service (or reboot).
 
 SOCKET=/tmp/vtg-display.sock
+MEDIA_DIR="$(cd "$(dirname "$0")/.." && pwd)/media"
+shopt -s nullglob  # empty folder -> mpv starts idle instead of erroring
 rm -f "$SOCKET"
 
 port_connected() {
@@ -26,6 +28,7 @@ else
 fi
 
 echo "VTG display: using $CONNECTOR, audio on $AUDIO_CARD"
+echo "$CONNECTOR" > /tmp/vtg-display-connector  # read by the web UI
 
 exec mpv --idle=yes \
     --keep-open=yes \
@@ -48,4 +51,4 @@ exec mpv --idle=yes \
     --loop-playlist=inf \
     --quiet \
     --msg-level=vo=error \
-    ~/pi-vtg/media/video/*
+    "$MEDIA_DIR"/video/*

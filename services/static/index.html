@@ -409,7 +409,7 @@ async function loadOsdConfig() {
     const data = await res.json();
     const c = data.config;
     OSD_FIELDS.forEach(([elId, key]) => {
-      document.getElementById(elId).checked = c[key] !== false;
+      document.getElementById(elId).checked = !!c[key];
     });
     document.getElementById("osd-custom-message").value = c.custom_message || "";
   } catch (e) {

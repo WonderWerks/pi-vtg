@@ -20,12 +20,12 @@ MAX_NAME_LEN = 40
 
 DEFAULT_CONFIG = {
     "enabled": True,
-    "show_datetime": True,
+    "show_datetime": False,
     "show_ip": True,
     "show_ssid": True,
     "show_web_url": True,
-    "show_now_playing": True,
-    "show_audio_track": True,
+    "show_now_playing": False,
+    "show_audio_track": False,
     "show_errors": True,
     "custom_message": "",
 }
@@ -104,7 +104,7 @@ def build_status_text(cfg):
         return custom[:MAX_MESSAGE_LEN]
 
     lines = []
-    if cfg.get("show_datetime", True):
+    if cfg.get("show_datetime", False):
         lines.append(datetime.now().strftime("%Y-%m-%d %H:%M"))
     if cfg.get("show_ip", True):
         lines.append(f"eth0: {get_ip('eth0') or 'not connected'}")
@@ -118,9 +118,9 @@ def build_status_text(cfg):
             lines.append(f"SSID: {ssid or 'not connected'}")
     if cfg.get("show_web_url", True):
         lines.append(f"Web UI port: {PORT}")
-    if cfg.get("show_now_playing", True):
+    if cfg.get("show_now_playing", False):
         lines.append(f"Display: {now_playing(DISPLAY_SOCKET)}")
-    if cfg.get("show_audio_track", True):
+    if cfg.get("show_audio_track", False):
         lines.append(f"Audio: {now_playing(AUDIO_SOCKET)}")
     if cfg.get("show_errors", True):
         for svc in ("vtg-display.service", "vtg-audio.service", "vtg-web.service"):

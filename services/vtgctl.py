@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manual test CLI for Phase 1. Usage:
+"""Debug CLI for the mpv players (bypasses the web UI). Usage:
     vtgctl.py video load <file>
     vtgctl.py video pause|play|stop|status
     vtgctl.py audio load <file>

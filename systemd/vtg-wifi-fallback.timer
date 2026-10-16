@@ -1,10 +1,9 @@
 # vtg-wifi-fallback.timer
 [Unit]
-Description=Run VTG wifi fallback check every 30s
+Description=Run VTG wifi fallback check once, 30s after boot
 
 [Timer]
 OnBootSec=30
-OnUnitActiveSec=30
 
 [Install]
 WantedBy=timers.target

@@ -18,7 +18,8 @@ def service_active(name):
     r = subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True)
     return r.stdout.strip() == "active"
 
-MEDIA_DIR = Path(__file__).resolve().parent.parent / "media"
+BASE_DIR = Path(__file__).resolve().parent.parent
+MEDIA_DIR = BASE_DIR / "media"
 SOCKETS = {"video": "/tmp/vtg-display.sock", "audio": "/tmp/vtg-audio.sock", "image": "/tmp/vtg-display.sock"}
 MEDIA_FOLDERS = {"video": MEDIA_DIR / "video", "audio": MEDIA_DIR / "audio"}
 IMAGE_FOLDERS = {
@@ -110,7 +111,7 @@ def set_image_speed():
 
 STATE_DIR = MEDIA_DIR.parent / "state"
 OSD_CONFIG_PATH = STATE_DIR / "osd_config.json"
-OSD_DEFAULTS = {"enabled": True, "show_ip": True, "show_web_url": True, "show_errors": True, "show_ssid": True, "show_datetime": True, "show_now_playing": True, "show_audio_track": True, "custom_message": ""}
+OSD_DEFAULTS = {"enabled": True, "show_ip": True, "show_web_url": True, "show_errors": True, "show_ssid": True, "show_datetime": False, "show_now_playing": False, "show_audio_track": False, "custom_message": ""}
 
 @app.route("/api/osd/config", methods=["GET"])
 def get_osd_config():
@@ -195,7 +196,11 @@ def display_info():
         h = mpv.get_property("display-height")
         fps = mpv.get_property("display-fps")
         mpv.close()
-        return jsonify({"success": True, "width": w, "height": h, "fps": fps, "output": "HDMI-A-2 (auto-selected)"})
+        try:
+            output = Path("/tmp/vtg-display-connector").read_text().strip() + " (auto-selected)"
+        except OSError:
+            output = "unknown"
+        return jsonify({"success": True, "width": w, "height": h, "fps": fps, "output": output})
     except MpvIPCError as e:
         return jsonify({"success": False, "message": str(e)}), 503
 
@@ -222,7 +227,10 @@ def restart_service(service):
 @app.route("/api/system/wifi-check", methods=["POST"])
 def wifi_check_now():
     try:
-        subprocess.run(["/bin/bash", "/home/vtg/pi-vtg/services/wifi_fallback.sh"], timeout=45)
+        r = subprocess.run(["/bin/bash", str(BASE_DIR / "services" / "wifi_fallback.sh")],
+                           capture_output=True, text=True, timeout=45)
+        if r.returncode != 0:
+            return jsonify({"success": False, "message": (r.stderr or "wifi check failed")[-200:]}), 500
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -257,18 +265,6 @@ def cec_custom_route(device):
     if not command:
         return jsonify({"success": False, "message": "No command provided"}), 400
     return cec_aggregate(device, lambda d: cec_custom_fn(d, command))
-
-@app.route("/api/cec/<device>/volume_up", methods=["POST"])
-def cec_volume_up(device):
-    return jsonify({"success": False, "message": "Not yet validated — try the custom command box first."})
-
-@app.route("/api/cec/<device>/volume_down", methods=["POST"])
-def cec_volume_down(device):
-    return jsonify({"success": False, "message": "Not yet validated — try the custom command box first."})
-
-@app.route("/api/cec/<device>/mute", methods=["POST"])
-def cec_mute(device):
-    return jsonify({"success": False, "message": "Not yet validated — try the custom command box first."})
 
 MONO_FILTER = "@mono:lavfi=[pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1]"
 
