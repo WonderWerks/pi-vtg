@@ -17,6 +17,7 @@ import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from mpv_ipc import MpvIPC, MpvIPCError
+import system_mode
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATE_DIR = BASE_DIR / "state"
@@ -238,8 +239,12 @@ def session(t):
 def main():
     log = setup_log()
     prev = last_line(LOG_PATH)
-    log.info("LOGGER  started")
-    if prev and CLEAN_STOP not in prev:
+    protected = system_mode.protected_now()
+    log.info("LOGGER  started" + ("  (protected mode: this boot's log is in RAM and is lost at power-off;"
+                                  " use Debug mode to keep it)" if protected else "  (writable: log is kept)"))
+    # Power-loss detection only on writable boots: in protected mode the
+    # card holds a stale log from the last writable session.
+    if not protected and prev and CLEAN_STOP not in prev:
         try:
             c = json.loads(CHECKPOINT_PATH.read_text())
             detail = f"; last saved: {c.get('file')} at {fmt(c.get('pos'))} / {fmt(c.get('dur'))}"

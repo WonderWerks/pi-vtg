@@ -7,6 +7,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from mpv_ipc import MpvIPC, MpvIPCError
 import subprocess
 from cec_control import power_on as cec_power_on_fn, power_off as cec_power_off_fn, custom as cec_custom_fn, CEC_DEVICES
+import system_mode
 
 def get_ip(iface):
     try:
@@ -166,7 +167,38 @@ def set_osd_config():
     cfg["custom_message"] = (cfg.get("custom_message") or "")[:80]
     with open(OSD_CONFIG_PATH, "w") as f:
         json.dump(cfg, f)
+    ok, msg = persist(OSD_CONFIG_PATH)
+    if not ok:
+        return jsonify({"success": False, "message": f"Applied, but not saved for next boot: {msg}"}), 500
     return jsonify({"success": True})
+
+MODE_SCRIPT = BASE_DIR / "services" / "vtg_mode.sh"
+
+def persist(*paths):
+    """Write these files through to the SD card (needed in protected mode,
+    where normal writes only go to RAM)."""
+    try:
+        r = subprocess.run(["sudo", "/usr/bin/bash", str(MODE_SCRIPT), "persist", *map(str, paths)],
+                           capture_output=True, text=True, timeout=30)
+        return r.returncode == 0, (r.stderr or r.stdout).strip()[-200:]
+    except Exception as e:
+        return False, str(e)
+
+@app.route("/api/system/mode")
+def get_mode():
+    return jsonify({"success": True, **system_mode.status()})
+
+@app.route("/api/system/mode/<mode>", methods=["POST"])
+def set_mode(mode):
+    if mode not in ("protect", "maintenance", "debug"):
+        return jsonify({"success": False, "message": "Unknown mode"}), 400
+    mark_command(f"switch to {mode} mode (reboot)")
+    try:
+        # Runs in the background: enabling protection can take a minute, then reboots
+        subprocess.Popen(["sudo", "/usr/bin/bash", str(MODE_SCRIPT), mode])
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route("/api/network")
 def network_info():

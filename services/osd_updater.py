@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from mpv_ipc import MpvIPC, MpvIPCError
+import system_mode
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_PATH = BASE_DIR / "state" / "osd_config.json"
@@ -126,6 +127,8 @@ def build_status_text(cfg):
     if cfg.get("show_audio_track", False):
         lines.append(f"Audio: {now_playing(AUDIO_SOCKET)}")
     if cfg.get("show_errors", True):
+        if not system_mode.protected_now():
+            lines.append("MAINTENANCE MODE: shut down before unplugging")
         for svc in ("vtg-display.service", "vtg-audio.service", "vtg-web.service"):
             if not service_active(svc):
                 lines.append(f"ERROR: {svc} not running")

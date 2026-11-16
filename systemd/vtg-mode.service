@@ -1,0 +1,11 @@
+[Unit]
+Description=VTG protected-mode check (ends a one-boot debug session)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /home/vtg/pi-vtg/services/vtg_mode.sh boot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

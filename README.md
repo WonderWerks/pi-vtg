@@ -89,6 +89,8 @@ mkdir -p ~/pi-vtg/media/{video,audio,images_1080p,images_4k} ~/pi-vtg/state
 
 Media files are not included in the repo. Copy your own in from your computer (see [Adding media](#adding-media)). At minimum, put one video in `media/video` and one audio file in `media/audio` so there's something to play on boot.
 
+**Load all your media now, during the build.** Step 9 makes the SD card read-only so the unit survives being unplugged at any time. After that, anything copied in only lives in RAM and disappears at power-off. Adding media later means switching to Maintenance mode first (see [Power-pull protection](#power-pull-protection)).
+
 ### 5. Configure wifi
 
 ```bash
@@ -118,7 +120,7 @@ You should see `Wifi profiles configured.`
 ```bash
 for f in ~/pi-vtg/systemd/*; do sudo ln -sf "$f" /etc/systemd/system/; done
 sudo systemctl daemon-reload
-sudo systemctl enable vtg-display.service vtg-audio.service vtg-osd.service vtg-web.service vtg-playlog.service vtg-cec-init.service vtg-wifi-fallback.timer
+sudo systemctl enable vtg-display.service vtg-audio.service vtg-osd.service vtg-web.service vtg-playlog.service vtg-mode.service vtg-cec-init.service vtg-wifi-fallback.timer
 ```
 
 The unit files are symlinked rather than copied, so a `git pull` updates them too.
@@ -131,9 +133,9 @@ echo 'x /tmp/vtg-*' | sudo tee /etc/tmpfiles.d/pi-vtg.conf
 
 ### 7. Allow the web UI's restart and reboot buttons
 
-The web UI runs as `vtg` and needs `sudo` for exactly three commands. Grant only those:
+The web UI runs as `vtg` and needs `sudo` for exactly four commands. Grant only those:
 
-    echo 'vtg ALL=(root) NOPASSWD: /usr/bin/systemctl restart vtg-display.service, /usr/bin/systemctl restart vtg-audio.service, /usr/sbin/reboot' | sudo tee /etc/sudoers.d/pi-vtg
+    echo 'vtg ALL=(root) NOPASSWD: /usr/bin/systemctl restart vtg-display.service, /usr/bin/systemctl restart vtg-audio.service, /usr/sbin/reboot, /usr/bin/bash /home/vtg/pi-vtg/services/vtg_mode.sh *' | sudo tee /etc/sudoers.d/pi-vtg
     sudo chmod 440 /etc/sudoers.d/pi-vtg
     sudo visudo -cf /etc/sudoers.d/pi-vtg
 
@@ -151,6 +153,22 @@ systemctl status 'vtg-*' --no-pager
 ```
 
 `systemctl --failed` should list 0 units. Then open the web UI at `http://vtg.local:5000` (or `http://<ip>:5000`).
+
+### 9. Turn on power-pull protection (last step)
+
+Only do this once everything works and **all your media is loaded**. It makes the SD card read-only:
+
+```bash
+sudo bash ~/pi-vtg/services/vtg_mode.sh protect
+```
+
+It takes up to a minute, then reboots. Check it took effect:
+
+```bash
+sudo bash ~/pi-vtg/services/vtg_mode.sh status
+```
+
+You should see `now=protected next_boot=protected`, and the OSD no longer shows `MAINTENANCE MODE`.
 
 ## Usage
 
@@ -190,6 +208,8 @@ Ethernet is always DHCP and works regardless of wifi. The web UI and SSH are rea
 Video and Images share one output. Starting one replaces the other.
 
 ### Adding media
+
+If the unit is in Protected mode, switch to **Maintenance** first or the files will vanish at power-off (see [Power-pull protection](#power-pull-protection)). Best practice is to load all media during the initial build.
 
 Copy files over SFTP using the same login as SSH (port 22). Use [WinSCP](https://winscp.net/) or [FileZilla](https://filezilla-project.org/), or from a terminal:
 
@@ -286,13 +306,44 @@ python3 vtgctl.py video status
 python3 vtgctl.py audio volume 50
 ```
 
+## Power-pull protection
+
+The unit is built to be switched off at the wall. Pulling power while the SD card is being written can corrupt it, so in normal use the card is read-only and every change goes to RAM instead.
+
+| Mode | SD card | Unplug anytime? | Use for |
+|---|---|---|---|
+| **Protected** (normal) | Read-only; changes are lost at power-off | Yes | Field use |
+| **Maintenance** | Writable | No, shut down first | Adding media, updating, changing setup |
+| **Debug** | Writable for one boot, then Protected again | No, shut down first | Keeping the play log and system logs across a reboot |
+
+Switch from the web UI (**Power-Pull Protection** panel) or over SSH:
+
+```bash
+sudo bash ~/pi-vtg/services/vtg_mode.sh maintenance   # or: protect, debug, status
+```
+
+Each switch reboots the unit. In Maintenance or Debug, the OSD shows `MAINTENANCE MODE: shut down before unplugging`.
+
+Settings changed in the web UI (OSD options) are written through to the card even while protected, so they survive power-off. The play log in Protected mode lasts only until power-off; use Debug mode to keep it.
+
+**Adding media after the build:** switch to Maintenance, copy the files, then switch back to Protected.
+
 ## Updating
+
+Updates need a writable card. Switch to Maintenance first, update, then switch back:
+
+```bash
+sudo bash ~/pi-vtg/services/vtg_mode.sh maintenance
+```
+
+After it reboots:
 
 ```bash
 cd ~/pi-vtg
 git pull
 sudo systemctl daemon-reload
 sudo systemctl restart vtg-display vtg-audio vtg-osd vtg-web vtg-playlog
+sudo bash ~/pi-vtg/services/vtg_mode.sh protect
 ```
 
 ## How it works
@@ -308,6 +359,8 @@ pi-vtg/
 │   ├── static/index.html  the web UI page
 │   ├── osd_updater.py     refreshes the on-screen status text every 2s
 │   ├── play_logger.py     play log: what played, for how long, why it stopped
+│   ├── vtg_mode.sh        protected / maintenance / debug mode switching
+│   ├── system_mode.py     reads the current mode (for the web UI and OSD)
 │   ├── cec_control.py     cec-ctl wrapper used by the web UI
 │   ├── cec_init.sh        registers both HDMI ports as CEC playback devices
 │   ├── wifi_setup.sh      one-time: creates the wifi + hotspot profiles
@@ -333,9 +386,8 @@ Service units launch scripts through `/bin/bash` instead of relying on executabl
 
 In priority order:
 
-1. **Power-pull safe (read-only root).** The unit is meant to be switched off at the wall, so the SD card runs read-only with changes held in RAM. Includes a one-boot "debug mode" that keeps logs across a reboot, and keeps saved wifi networks persistent.
-2. **Wifi from the web UI.** Connect to the fallback hotspot, scan, pick an SSID, enter the password. The Pi remembers every network it has joined and reconnects to any of them on boot, not just the one in `secrets.env`.
-3. **Projector alignment mode.** Grids, crosshairs, edge markers and safe-area patterns for common aspect ratios (16:9, 16:10, 4:3, 21:9, 2.35:1, 1.85:1, 32:9), generated at the display's native resolution.
+1. **Wifi from the web UI.** Connect to the fallback hotspot, scan, pick an SSID, enter the password. The Pi remembers every network it has joined and reconnects to any of them on boot, not just the one in `secrets.env`. Saved networks are written through to the card so they survive power-off in Protected mode.
+2. **Projector alignment mode.** Grids, crosshairs, edge markers and safe-area patterns for common aspect ratios (16:9, 16:10, 4:3, 21:9, 2.35:1, 1.85:1, 32:9), generated at the display's native resolution.
 - Physical buttons and a small LCD for on-device control
 - 3D-printed case
 - Separate 4K video playlist

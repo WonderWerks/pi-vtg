@@ -94,6 +94,17 @@
 </div>
 
 <div class="panel">
+  <h2>Power-Pull Protection</h2>
+  <div class="display-info" id="mode-info">Checking...</div>
+  <div class="row">
+    <button onclick="setMode('protect')">Protect (read-only)</button>
+    <button onclick="setMode('maintenance')">Maintenance (writable)</button>
+    <button onclick="setMode('debug')">Debug: keep logs for one boot</button>
+  </div>
+  <div class="status" id="status-mode"></div>
+</div>
+
+<div class="panel">
   <h2>Errors / Debugging</h2>
   <div class="display-info" id="display-info">Loading display info...</div>
   <div id="error-summary">Checking for errors...</div>
@@ -503,7 +514,42 @@ async function rebootDevice() {
   }
 }
 
+const MODE_CONFIRM = {
+  protect: "Switch to PROTECTED mode and reboot?\n\nThe SD card becomes read-only: safe to unplug at any time. Media copied in afterwards is lost at power-off. Enabling can take a minute before the reboot.",
+  maintenance: "Switch to MAINTENANCE mode and reboot?\n\nThe SD card becomes writable so you can add media or update. Shut down properly (Reboot button or 'sudo poweroff') before unplugging until you switch back to Protected.",
+  debug: "Reboot into DEBUG mode?\n\nWritable for one boot so the play log and system logs are kept. The boot after that is protected again automatically."
+};
+
+async function setMode(mode) {
+  if (!confirm(MODE_CONFIRM[mode])) return;
+  try {
+    const res = await fetch(`/api/system/mode/${mode}`, { method: "POST" });
+    const data = await res.json();
+    setStatusMsg("mode", data.success ? "Switching... the device will reboot (up to about 2 minutes)." : (data.message || "Switch failed."), data.success);
+  } catch (e) {
+    setStatusMsg("mode", "Mode request failed.", false);
+  }
+}
+
+async function pollMode() {
+  const el = document.getElementById("mode-info");
+  try {
+    const res = await fetch("/api/system/mode");
+    const m = await res.json();
+    const now = m.protected_now ? "PROTECTED: safe to unplug" : "WRITABLE: shut down before unplugging";
+    let next = "";
+    if (m.debug_once) next = " | Next boot: debug (writable once)";
+    else if (m.protected_next_boot !== m.protected_now) next = ` | Next boot: ${m.protected_next_boot ? "protected" : "writable"}`;
+    el.textContent = `Now: ${now}${next}`;
+    el.style.color = m.protected_now ? "" : "#fc6";
+  } catch (e) {
+    el.textContent = "Mode unavailable.";
+  }
+}
+
 render();
+pollMode();
+setInterval(pollMode, 10000);
 targets.forEach(t => loadFiles(t.id));
 pollStatus();
 pollNetwork();
