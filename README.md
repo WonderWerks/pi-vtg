@@ -66,7 +66,7 @@ On the Pi:
 
 ```bash
 sudo apt update && sudo apt full-upgrade -y
-sudo apt install -y git mpv python3-flask v4l-utils
+sudo apt install -y git mpv python3-flask python3-pil fonts-dejavu-core v4l-utils
 ```
 
 `v4l-utils` provides `cec-ctl`. NetworkManager and Avahi (`.local` names) are already included in Raspberry Pi OS.
@@ -103,7 +103,7 @@ Fill in all four values:
 
 | Variable | Meaning |
 |---|---|
-| `WIFI_SSID` / `WIFI_PASSWORD` | The network the unit should join |
+| `WIFI_SSID` / `WIFI_PASSWORD` | A first network to join (more can be added later from the web UI) |
 | `FALLBACK_SSID` / `FALLBACK_PASSWORD` | The hotspot it broadcasts if that network isn't found (password: 8+ characters) |
 
 Save (Ctrl+O, Enter, Ctrl+X), then lock down the file and create the wifi profiles:
@@ -133,9 +133,9 @@ echo 'x /tmp/vtg-*' | sudo tee /etc/tmpfiles.d/pi-vtg.conf
 
 ### 7. Allow the web UI's restart and reboot buttons
 
-The web UI runs as `vtg` and needs `sudo` for exactly four commands. Grant only those:
+The web UI runs as `vtg` and needs `sudo` for exactly five commands. Grant only those:
 
-    echo 'vtg ALL=(root) NOPASSWD: /usr/bin/systemctl restart vtg-display.service, /usr/bin/systemctl restart vtg-audio.service, /usr/sbin/reboot, /usr/bin/bash /home/vtg/pi-vtg/services/vtg_mode.sh *' | sudo tee /etc/sudoers.d/pi-vtg
+    echo 'vtg ALL=(root) NOPASSWD: /usr/bin/systemctl restart vtg-display.service, /usr/bin/systemctl restart vtg-audio.service, /usr/sbin/reboot, /usr/bin/bash /home/vtg/pi-vtg/services/vtg_mode.sh *, /usr/bin/bash /home/vtg/pi-vtg/services/wifi_ctl.sh *' | sudo tee /etc/sudoers.d/pi-vtg
     sudo chmod 440 /etc/sudoers.d/pi-vtg
     sudo visudo -cf /etc/sudoers.d/pi-vtg
 
@@ -198,11 +198,13 @@ Ethernet is always DHCP and works regardless of wifi. The web UI and SSH are rea
 | Panel | What it does |
 |---|---|
 | Video | Pick a file or play the whole folder; play/pause/stop/next/prev; loop; volume; mute |
-| Images | Choose the 1080p or 4K folder; set seconds per image; same transport controls |
+| Images | Choose the 1080p or 4K folder; set seconds per image; same transport controls. **Alignment patterns**: grid, screen framing, overscan/safe areas, crosshatch, focus, grayscale steps and solid fields, for any common aspect ratio (16:9, 16:10, 4:3, 5:4, 1.85, 1.90, 2.00, 2.35, 2.39, 21:9, 32:9), drawn at the display's native resolution |
 | Audio Test | Same controls for the 3.5mm output, plus the Mono Output toggle |
 | CEC | Power on/off and raw `cec-ctl` arguments, to either or both HDMI ports |
-| OSD | Turn OSD lines on/off; set a custom on-screen message (max 80 characters) |
+| OSD | Turn OSD lines on/off (including the protection mode readout); set a custom on-screen message (max 80 characters) |
+| Wifi | Scan and join a network, forget saved networks, switch to the hotspot |
 | System | Restart the display or audio player, run the wifi check, reboot |
+| Power-Pull Protection | Switch Protected / Maintenance / Debug mode |
 | Errors / Debugging | Current display resolution/refresh/port, and any stopped services |
 
 Video and Images share one output. Starting one replaces the other.
@@ -270,6 +272,7 @@ Replace `vtg-display` with `vtg-audio`, `vtg-web`, `vtg-osd`, `vtg-cec-init`, or
 | Video/audio stutter | The file is a format the Pi 4 can't decode in hardware. See [Video formats](#video-formats-the-pi-4-plays-smoothly). |
 | Web UI unreachable on wifi | Look at the OSD for the current IP and SSID. On the hotspot, use `10.1.1.10:5000`. |
 | Hotspot didn't appear | `journalctl -u vtg-wifi-fallback -b` and confirm `secrets.env` values match step 5. |
+| Joined the wrong network / can't reach the web UI after Connect | Look at the OSD for the SSID and IP. If a Connect fails (wrong password, out of range), the previous network or the hotspot comes back within about a minute. |
 | `ERROR: ... not running` on the OSD | `journalctl -u <that service> -b` |
 
 ### Play log
@@ -364,7 +367,9 @@ pi-vtg/
 │   ├── cec_control.py     cec-ctl wrapper used by the web UI
 │   ├── cec_init.sh        registers both HDMI ports as CEC playback devices
 │   ├── wifi_setup.sh      one-time: creates the wifi + hotspot profiles
-│   ├── wifi_fallback.sh   boot-time wifi decision
+│   ├── wifi_fallback.sh   boot-time wifi decision: any saved network in range, else hotspot
+│   ├── wifi_ctl.sh        web UI wifi actions: scan, connect (with rollback), forget, hotspot
+│   ├── patterns.py        alignment pattern generator (Pillow)
 │   └── vtgctl.py          debug CLI
 ├── systemd/              service and timer units (symlinked into /etc/systemd/system)
 ├── media/                your media (not in git)
@@ -380,14 +385,11 @@ Service units launch scripts through `/bin/bash` instead of relying on executabl
 - **One HDMI output at a time.** True simultaneous dual output isn't possible with this design: on the Pi 4's driver, only one process can render to the display hardware at once. Supporting it would take a different architecture.
 - **HDMI changes restart the player.** Plugging in, unplugging, a TV that drops HDMI when turned off, or moving the cable restarts the display player (about 5 to 10 seconds), and playback starts from the top of the video folder. Anything started from the web UI (images, a single file) has to be started again.
 - **4K images are scaled** to the display's current mode; the output resolution is not switched.
-- **Wifi is decided once per boot.** No automatic switching back if your network appears later.
+- **Wifi is decided once per boot.** At boot the unit joins any saved network in range, otherwise it starts the hotspot. If a known network appears later, join it from the web UI.
+- **WPA2/WPA3 personal and open networks only.** Enterprise (802.1X username/password) networks aren't supported from the web UI.
 
 ## Roadmap
 
-In priority order:
-
-1. **Wifi from the web UI.** Connect to the fallback hotspot, scan, pick an SSID, enter the password. The Pi remembers every network it has joined and reconnects to any of them on boot, not just the one in `secrets.env`. Saved networks are written through to the card so they survive power-off in Protected mode.
-2. **Projector alignment mode.** Grids, crosshairs, edge markers and safe-area patterns for common aspect ratios (16:9, 16:10, 4:3, 21:9, 2.35:1, 1.85:1, 32:9), generated at the display's native resolution.
 - Physical buttons and a small LCD for on-device control
 - 3D-printed case
 - Separate 4K video playlist

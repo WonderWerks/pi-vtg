@@ -28,6 +28,7 @@ DEFAULT_CONFIG = {
     "show_now_playing": False,
     "show_audio_track": False,
     "show_errors": True,
+    "show_mode": True,
     "custom_message": "",
 }
 
@@ -126,8 +127,12 @@ def build_status_text(cfg):
         lines.append(f"Display: {now_playing(DISPLAY_SOCKET)}")
     if cfg.get("show_audio_track", False):
         lines.append(f"Audio: {now_playing(AUDIO_SOCKET)}")
+    protected = system_mode.protected_now()
+    if cfg.get("show_mode", True):
+        lines.append("Mode: PROTECTED (safe to unplug)" if protected
+                     else "Mode: MAINTENANCE (shut down before unplugging)")
     if cfg.get("show_errors", True):
-        if not system_mode.protected_now():
+        if not protected and not cfg.get("show_mode", True):
             lines.append("MAINTENANCE MODE: shut down before unplugging")
         for svc in ("vtg-display.service", "vtg-audio.service", "vtg-web.service"):
             if not service_active(svc):

@@ -149,7 +149,7 @@ def set_image_speed():
 
 STATE_DIR = MEDIA_DIR.parent / "state"
 OSD_CONFIG_PATH = STATE_DIR / "osd_config.json"
-OSD_DEFAULTS = {"enabled": True, "show_ip": True, "show_web_url": True, "show_errors": True, "show_ssid": True, "show_datetime": False, "show_now_playing": False, "show_audio_track": False, "custom_message": ""}
+OSD_DEFAULTS = {"enabled": True, "show_ip": True, "show_web_url": True, "show_errors": True, "show_ssid": True, "show_datetime": False, "show_now_playing": False, "show_audio_track": False, "show_mode": True, "custom_message": ""}
 
 @app.route("/api/osd/config", methods=["GET"])
 def get_osd_config():
@@ -303,6 +303,160 @@ def wifi_check_now():
                            capture_output=True, text=True, timeout=45)
         if r.returncode != 0:
             return jsonify({"success": False, "message": (r.stderr or "wifi check failed")[-200:]}), 500
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+# ---- Alignment patterns --------------------------------------------------
+@app.route("/api/patterns")
+def list_patterns():
+    import patterns
+    return jsonify({"success": True,
+                    "patterns": [{"id": k, "label": l} for k, l in patterns.PATTERNS],
+                    "aspects": [{"id": k, "label": l} for k, l, _ in patterns.ASPECTS]})
+
+@app.route("/api/pattern", methods=["POST"])
+def show_pattern():
+    data = request.json or {}
+    try:
+        import patterns
+    except ImportError:
+        return jsonify({"success": False, "message": "Pattern support needs python3-pil (sudo apt install python3-pil)"}), 500
+    try:
+        mpv = get_mpv("image")
+        # Draw at the display's real resolution so lines land on real pixels
+        w = mpv.get_property("display-width") or 1920
+        h = mpv.get_property("display-height") or 1080
+        path = patterns.make(data.get("pattern", "grid"), data.get("aspect", "full"), w, h)
+        # Per-file options: hold the image until replaced; optionally hide
+        # the OSD text so it doesn't sit on top of the pattern.
+        opts = "image-display-duration=inf" + (",osd-level=0" if data.get("hide_osd", True) else "")
+        mark_command("show alignment pattern")
+        try:
+            mpv.command("loadfile", str(path), "replace", -1, opts)   # mpv 0.38+
+        except MpvIPCError:
+            mpv.command("loadfile", str(path), "replace", opts)       # older mpv
+        mpv.close()
+        return jsonify({"success": True, "size": f"{w}x{h}"})
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except (MpvIPCError, OSError) as e:
+        return jsonify({"success": False, "message": str(e)}), 503
+
+# ---- Wifi ----------------------------------------------------------------
+WIFI_SCRIPT = BASE_DIR / "services" / "wifi_ctl.sh"
+WIFI_RESULT = Path("/tmp/vtg-wifi-result")
+
+def nm_split(line):
+    """Split one line of `nmcli -t` output on unescaped colons."""
+    parts, cur, esc = [], "", False
+    for ch in line:
+        if esc:
+            cur += ch; esc = False
+        elif ch == "\\":
+            esc = True
+        elif ch == ":":
+            parts.append(cur); cur = ""
+        else:
+            cur += ch
+    parts.append(cur)
+    return parts
+
+def nmcli(*args):
+    try:
+        return subprocess.run(["nmcli", "-t", *args], capture_output=True, text=True, timeout=10).stdout
+    except Exception:
+        return ""
+
+def fallback_ssid():
+    try:
+        for line in (BASE_DIR / "secrets.env").read_text().splitlines():
+            if line.startswith("FALLBACK_SSID="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return None
+
+def wifi_script(*args, stdin=None, timeout=30):
+    r = subprocess.run(["sudo", "/usr/bin/bash", str(WIFI_SCRIPT), *args], input=stdin,
+                       capture_output=True, text=True, timeout=timeout)
+    return r.returncode == 0, (r.stdout if r.returncode == 0 else r.stderr).strip()
+
+@app.route("/api/wifi")
+def wifi_status():
+    hotspot = fallback_ssid()
+    active = None
+    for line in nmcli("-f", "NAME,DEVICE", "connection", "show", "--active").splitlines():
+        p = nm_split(line)
+        if len(p) == 2 and p[1] == "wlan0":
+            active = p[0]
+    saved = [p[0] for p in map(nm_split, nmcli("-f", "NAME,TYPE", "connection", "show").splitlines())
+             if len(p) == 2 and p[1] == "802-11-wireless" and p[0] != hotspot]
+    last = None
+    try:
+        ts, msg = WIFI_RESULT.read_text().strip().split(" ", 1)
+        last = {"age": int(time.time() - int(ts)), "message": msg}
+    except (OSError, ValueError):
+        pass
+    return jsonify({"success": True, "active": active, "is_hotspot": active is not None and active == hotspot,
+                    "hotspot": hotspot, "ip": get_ip("wlan0"), "saved": sorted(saved), "last_result": last})
+
+@app.route("/api/wifi/scan")
+def wifi_scan():
+    try:
+        ok, out = wifi_script("scan", timeout=25)
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+    best = {}
+    for line in out.splitlines():
+        p = nm_split(line)
+        if len(p) < 3 or not p[0]:
+            continue  # hidden networks have no name
+        try:
+            signal = int(p[1])
+        except ValueError:
+            signal = 0
+        if p[0] not in best or signal > best[p[0]]["signal"]:
+            best[p[0]] = {"ssid": p[0], "signal": signal, "secure": p[2] not in ("", "--")}
+    nets = sorted(best.values(), key=lambda n: -n["signal"])
+    return jsonify({"success": True, "networks": nets})
+
+@app.route("/api/wifi/connect", methods=["POST"])
+def wifi_connect():
+    data = request.json or {}
+    ssid = (data.get("ssid") or "").strip()
+    password = data.get("password") or ""
+    if not ssid or len(ssid) > 32:
+        return jsonify({"success": False, "message": "Enter a network name (max 32 characters)"}), 400
+    if password and not 8 <= len(password) <= 63:
+        return jsonify({"success": False, "message": "Wifi passwords are 8 to 63 characters"}), 400
+    args = ["connect", ssid] + (["hidden"] if data.get("hidden") else [])
+    try:
+        # Background: switching networks drops this very connection if
+        # you're on the hotspot. Password goes via stdin, not the command
+        # line, so it never lands in the sudo log.
+        p = subprocess.Popen(["sudo", "/usr/bin/bash", str(WIFI_SCRIPT), *args],
+                             stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+        p.stdin.write(password + "\n")
+        p.stdin.close()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route("/api/wifi/forget", methods=["POST"])
+def wifi_forget():
+    name = (request.json or {}).get("name") or ""
+    try:
+        ok, msg = wifi_script("forget", name)
+    except Exception as e:
+        ok, msg = False, str(e)
+    return jsonify({"success": ok, "message": msg}), (200 if ok else 400)
+
+@app.route("/api/wifi/hotspot", methods=["POST"])
+def wifi_hotspot():
+    try:
+        subprocess.Popen(["sudo", "/usr/bin/bash", str(WIFI_SCRIPT), "hotspot"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500

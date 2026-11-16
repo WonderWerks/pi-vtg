@@ -13,7 +13,10 @@
   .panel { background:#1c1c1c; border:1px solid #333; border-radius:10px; padding:18px; margin-bottom:16px; }
   h2 { font-size:17px; margin:0 0 12px; display:flex; align-items:center; gap:8px; }
   .nowplaying { font-size:13px; color:#9fd; margin-bottom:14px; min-height:18px; }
-  select, input[type=number], input[type=text] { width:100%; padding:10px; margin-bottom:10px; background:#222; color:#eee; border:1px solid #444; border-radius:6px; font-size:14px; }
+  .saved-row { display:flex; align-items:center; gap:8px; font-size:14px; padding:6px 0; border-top:1px solid #2a2a2a; }
+  .saved-row span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .saved-row button { flex:0 0 auto; padding:6px 12px; min-width:0; font-size:13px; }
+  select, input[type=number], input[type=text], input[type=password] { width:100%; padding:10px; margin-bottom:10px; background:#222; color:#eee; border:1px solid #444; border-radius:6px; font-size:14px; }
   .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; align-items:center; }
   .row select, .row input[type=number] { margin-bottom:0; }
   .row label { font-size:14px; display:flex; align-items:center; gap:6px; margin-right:12px; }
@@ -69,6 +72,7 @@
   <div class="row"><label><input type="checkbox" id="osd-url"> Show web UI port</label></div>
   <div class="row"><label><input type="checkbox" id="osd-nowplaying"> Show now playing (video/images)</label></div>
   <div class="row"><label><input type="checkbox" id="osd-audiotrack"> Show audio track</label></div>
+  <div class="row"><label><input type="checkbox" id="osd-mode"> Show protection mode</label></div>
   <div class="row"><label><input type="checkbox" id="osd-errors"> Show errors</label></div>
   <input type="text" id="osd-custom-message" maxlength="80" placeholder="Custom message (overrides the above, max 80 chars)">
   <div class="row">
@@ -76,6 +80,24 @@
     <button class="primary" onclick="saveOsdConfig()">Save OSD settings</button>
   </div>
   <div class="status" id="status-osd"></div>
+</div>
+
+<div class="panel">
+  <h2>Wifi</h2>
+  <div class="display-info" id="wifi-info">Checking...</div>
+  <div class="row">
+    <select id="wifi-ssid" onchange="onWifiPick()" style="flex:1;width:auto;min-width:0"><option value="">Scan to list networks...</option></select>
+    <button onclick="wifiScan()" style="flex:0 0 auto">Scan</button>
+  </div>
+  <input type="text" id="wifi-hidden-ssid" placeholder="Network name (hidden network)" style="display:none">
+  <input type="password" id="wifi-password" placeholder="Password (leave empty for open networks)">
+  <div class="row">
+    <button class="primary" onclick="wifiConnect()">Connect</button>
+    <button onclick="wifiHotspot()">Switch to hotspot</button>
+  </div>
+  <div class="note">Connecting from the hotspot drops your connection to this page. Join the new network on your phone/laptop and use the IP shown on screen. If it fails, the hotspot comes back on its own.</div>
+  <div id="wifi-saved"></div>
+  <div class="status" id="status-wifi"></div>
 </div>
 
 <div class="panel">
@@ -142,6 +164,13 @@ function render() {
         <div class="row">
           <input type="number" id="speed-${t.id}" value="5" min="1" step="1" placeholder="Seconds per image">
           <button onclick="applySpeed('${t.id}')">Set loop speed</button>
+        </div>
+        <div class="note" style="margin-top:6px">Alignment patterns (drawn at the display's native resolution):</div>
+        <select id="pattern-name"></select>
+        <select id="pattern-aspect"></select>
+        <div class="row">
+          <label><input type="checkbox" id="pattern-hide-osd" checked> Hide OSD</label>
+          <button class="primary" onclick="showPattern()">Show pattern</button>
         </div>
       ` : ""}
 
@@ -411,6 +440,7 @@ const OSD_FIELDS = [
   ["osd-url", "show_web_url"],
   ["osd-nowplaying", "show_now_playing"],
   ["osd-audiotrack", "show_audio_track"],
+  ["osd-mode", "show_mode"],
   ["osd-errors", "show_errors"]
 ];
 
@@ -547,7 +577,142 @@ async function pollMode() {
   }
 }
 
+// ---- Alignment patterns ----
+async function loadPatterns() {
+  try {
+    const res = await fetch("/api/patterns");
+    const data = await res.json();
+    document.getElementById("pattern-name").replaceChildren(...data.patterns.map(p => new Option(p.label, p.id)));
+    document.getElementById("pattern-aspect").replaceChildren(...data.aspects.map(a => new Option(a.label, a.id)));
+  } catch (e) {
+    setStatusMsg("image", "Could not load pattern list.", false);
+  }
+}
+
+async function showPattern() {
+  const body = {
+    pattern: document.getElementById("pattern-name").value,
+    aspect: document.getElementById("pattern-aspect").value,
+    hide_osd: document.getElementById("pattern-hide-osd").checked
+  };
+  setStatusMsg("image", "Drawing pattern...", true);
+  try {
+    const res = await fetch("/api/pattern", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    setStatusMsg("image", data.success ? `Showing pattern at ${data.size}.` : (data.message || "Pattern failed."), data.success);
+  } catch (e) {
+    setStatusMsg("image", "Pattern request failed.", false);
+  }
+}
+
+// ---- Wifi ----
+const HIDDEN_OPT = "__hidden__";
+
+function onWifiPick() {
+  const hidden = document.getElementById("wifi-ssid").value === HIDDEN_OPT;
+  document.getElementById("wifi-hidden-ssid").style.display = hidden ? "" : "none";
+}
+
+async function wifiScan() {
+  const sel = document.getElementById("wifi-ssid");
+  setStatusMsg("wifi", "Scanning...", true);
+  try {
+    const res = await fetch("/api/wifi/scan");
+    const data = await res.json();
+    const nets = data.networks || [];
+    sel.replaceChildren(...nets.map(n =>
+      new Option(`${n.ssid}  (${n.signal}%${n.secure ? ", secured" : ", open"})`, n.ssid)));
+    sel.add(new Option("Other / hidden network...", HIDDEN_OPT));
+    onWifiPick();
+    setStatusMsg("wifi", nets.length ? `${nets.length} network(s) found.` : "No networks found. Use Other / hidden network to type a name.", !!nets.length);
+  } catch (e) {
+    setStatusMsg("wifi", "Scan failed.", false);
+  }
+}
+
+async function wifiConnect() {
+  const picked = document.getElementById("wifi-ssid").value;
+  const hidden = picked === HIDDEN_OPT;
+  const ssid = hidden ? document.getElementById("wifi-hidden-ssid").value.trim() : picked;
+  const password = document.getElementById("wifi-password").value;
+  if (!ssid) { setStatusMsg("wifi", "Pick or type a network first.", false); return; }
+  if (!confirm(`Connect to "${ssid}"?\n\nIf you're on the hotspot, this page will disconnect. Join "${ssid}" yourself, then open the IP shown on screen.`)) return;
+  try {
+    const res = await fetch("/api/wifi/connect", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ssid, password, hidden })
+    });
+    const data = await res.json();
+    document.getElementById("wifi-password").value = "";
+    setStatusMsg("wifi", data.success ? `Connecting to ${ssid}... (up to 45 seconds)` : (data.message || "Connect failed."), data.success);
+  } catch (e) {
+    setStatusMsg("wifi", "Connect request failed.", false);
+  }
+}
+
+async function wifiForget(name) {
+  if (!confirm(`Forget "${name}"? The unit won't join it automatically any more.`)) return;
+  try {
+    const res = await fetch("/api/wifi/forget", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name })
+    });
+    const data = await res.json();
+    setStatusMsg("wifi", data.success ? `Forgot ${name}.` : (data.message || "Forget failed."), data.success);
+    pollWifi();
+  } catch (e) {
+    setStatusMsg("wifi", "Forget request failed.", false);
+  }
+}
+
+async function wifiHotspot() {
+  if (!confirm("Switch wifi to the hotspot now? If you're connected over wifi, this page will disconnect.")) return;
+  try {
+    await fetch("/api/wifi/hotspot", { method: "POST" });
+    setStatusMsg("wifi", "Starting hotspot...", true);
+  } catch (e) {
+    setStatusMsg("wifi", "Hotspot request failed.", false);
+  }
+}
+
+async function pollWifi() {
+  try {
+    const res = await fetch("/api/wifi");
+    const w = await res.json();
+    let info;
+    if (w.is_hotspot) info = `Hotspot on: "${w.hotspot}" (${w.ip || "10.1.1.10"})`;
+    else if (w.active) info = `Connected to "${w.active}" (${w.ip || "no IP yet"})`;
+    else info = "Wifi not connected";
+    if (w.last_result && w.last_result.age < 600 && !w.last_result.message.startsWith("connecting"))
+      info += `  |  Last: ${w.last_result.message}`;
+    document.getElementById("wifi-info").textContent = info;
+
+    const box = document.getElementById("wifi-saved");
+    box.replaceChildren();
+    if (w.saved.length) {
+      const h = document.createElement("div");
+      h.className = "note"; h.textContent = "Saved networks (joined automatically when in range):";
+      box.append(h);
+      w.saved.forEach(name => {
+        const row = document.createElement("div"); row.className = "saved-row";
+        const label = document.createElement("span");
+        label.textContent = name + (name === w.active ? "  (connected)" : "");
+        const btn = document.createElement("button"); btn.textContent = "Forget";
+        btn.onclick = () => wifiForget(name);
+        row.append(label, btn); box.append(row);
+      });
+    }
+  } catch (e) {
+    document.getElementById("wifi-info").textContent = "Wifi status unavailable.";
+  }
+}
+
 render();
+loadPatterns();
+pollWifi();
+setInterval(pollWifi, 10000);
 pollMode();
 setInterval(pollMode, 10000);
 targets.forEach(t => loadFiles(t.id));
