@@ -1,0 +1,16 @@
+[Unit]
+# Never stop retrying (default gives up after 5 fast restarts)
+StartLimitIntervalSec=0
+Description=VTG Play Log (records what the display player played and why it stopped)
+After=vtg-display.service
+
+[Service]
+Type=simple
+User=vtg
+WorkingDirectory=/home/vtg/pi-vtg/services
+ExecStart=/usr/bin/python3 /home/vtg/pi-vtg/services/play_logger.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

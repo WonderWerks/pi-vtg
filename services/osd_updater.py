@@ -49,7 +49,7 @@ def get_fallback_ssid():
 
 def get_ip(iface):
     try:
-        out = subprocess.check_output(["ip", "-4", "-o", "addr", "show", iface], text=True)
+        out = subprocess.check_output(["ip", "-4", "-o", "addr", "show", iface], text=True, timeout=5)
         return out.split()[3].split("/")[0]
     except Exception:
         return None
@@ -57,7 +57,7 @@ def get_ip(iface):
 def get_wifi_ssid():
     try:
         out = subprocess.check_output(
-            ["nmcli", "-t", "-f", "NAME,DEVICE", "connection", "show", "--active"], text=True
+            ["nmcli", "-t", "-f", "NAME,DEVICE", "connection", "show", "--active"], text=True, timeout=5
         )
         for line in out.strip().split("\n"):
             parts = line.split(":")
@@ -68,8 +68,11 @@ def get_wifi_ssid():
     return None
 
 def service_active(name):
-    r = subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True)
-    return r.stdout.strip() == "active"
+    try:
+        r = subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True, timeout=5)
+        return r.stdout.strip() == "active"
+    except Exception:
+        return False
 
 def fmt_time(t):
     if t is None:

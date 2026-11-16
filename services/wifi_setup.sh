@@ -3,18 +3,30 @@ set -e
 cd "$(dirname "$0")/.."
 source secrets.env
 
+# Safe to re-run: an existing profile is updated in place (never
+# duplicated, never deleted), so a live wifi/hotspot session isn't cut.
+# Changes take effect the next time that connection comes up.
+upsert() {
+    local name="$1"; shift
+    if nmcli -g NAME connection show | grep -Fxq "$name"; then
+        sudo nmcli connection modify "$name" "$@"
+    else
+        sudo nmcli connection add type wifi con-name "$name" "$@" >/dev/null
+    fi
+}
+
 # $WIFI_SSID: normal client connection, higher priority
-sudo nmcli connection add type wifi ifname wlan0 con-name "$WIFI_SSID" ssid "$WIFI_SSID" \
+upsert "$WIFI_SSID" \
+    connection.interface-name wlan0 802-11-wireless.ssid "$WIFI_SSID" \
     connection.autoconnect yes connection.autoconnect-priority 10 \
-    wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$WIFI_PASSWORD" 2>/dev/null || \
-    sudo nmcli connection modify "$WIFI_SSID" wifi-sec.psk "$WIFI_PASSWORD"
+    wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$WIFI_PASSWORD"
 
 # $FALLBACK_SSID: fallback hotspot, connects if no primary connection (the watchdog brings it up manually)
-sudo nmcli connection add type wifi ifname wlan0 con-name "$FALLBACK_SSID" ssid "$FALLBACK_SSID" \
+upsert "$FALLBACK_SSID" \
+    connection.interface-name wlan0 802-11-wireless.ssid "$FALLBACK_SSID" \
     connection.autoconnect no \
     802-11-wireless.mode ap 802-11-wireless.band bg \
     ipv4.method shared ipv4.addresses "10.1.1.10/24" \
-    wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$FALLBACK_PASSWORD" 2>/dev/null || \
-    sudo nmcli connection modify "$FALLBACK_SSID" ipv4.addresses "10.1.1.10/24"
+    wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$FALLBACK_PASSWORD"
 
 echo "Wifi profiles configured."

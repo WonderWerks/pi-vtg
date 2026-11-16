@@ -181,9 +181,9 @@ async function loadFiles(id) {
     const res = await fetch(`/api/media/${id}${qs}`);
     const data = await res.json();
     const sel = document.getElementById(`sel-${id}`);
-    sel.innerHTML = data.files.length
-      ? data.files.map(f => `<option>${f}</option>`).join("")
-      : "<option>(no files found)</option>";
+    // Build options as text (not HTML) so any filename displays safely
+    sel.replaceChildren(...(data.files.length ? data.files : []).map(f => new Option(f, f)));
+    if (!data.files.length) sel.add(new Option("(no files found)", ""));
   } catch (e) {
     setStatusMsg(id, "Could not list media files.", false);
   }

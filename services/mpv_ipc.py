@@ -30,25 +30,40 @@ class MpvIPC:
         deadline = time.time() + timeout
         last_err = None
         while time.time() < deadline:
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             try:
-                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 sock.connect(self.socket_path)
                 sock.settimeout(2)
                 self._sock = sock
                 return
-            except (FileNotFoundError, ConnectionRefusedError) as e:
+            except OSError as e:  # not there yet, refused, stale socket...
+                sock.close()
                 last_err = e
                 time.sleep(0.25)
         raise MpvIPCError(
             f"Could not connect to mpv socket at {self.socket_path}: {last_err}"
         )
 
-    def _send_raw(self, payload):
-        self._sock.sendall((json.dumps(payload) + "\n").encode("utf-8"))
+    # Socket-level failures (timeout, broken pipe, reset) are raised as
+    # MpvIPCError so every caller only has one exception type to handle.
+    # socket.timeout is re-raised as-is for callers that wait for events.
 
-    def _read_line(self):
+    def _send_raw(self, payload):
+        try:
+            self._sock.sendall((json.dumps(payload) + "\n").encode("utf-8"))
+        except OSError as e:
+            raise MpvIPCError(f"mpv socket write failed: {e}")
+
+    def _read_line(self, raw_timeout=False):
         while b"\n" not in self._buffer:
-            chunk = self._sock.recv(4096)
+            try:
+                chunk = self._sock.recv(4096)
+            except socket.timeout:
+                if raw_timeout:
+                    raise
+                raise MpvIPCError("mpv did not reply in time")
+            except OSError as e:
+                raise MpvIPCError(f"mpv socket read failed: {e}")
             if not chunk:
                 raise MpvIPCError("mpv socket closed unexpectedly")
             self._buffer += chunk
@@ -150,5 +165,8 @@ class MpvIPC:
 
     def close(self):
         if self._sock:
-            self._sock.close()
+            try:
+                self._sock.close()
+            except OSError:
+                pass
             self._sock = None

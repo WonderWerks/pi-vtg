@@ -1,4 +1,6 @@
 [Unit]
+# Never stop retrying (default gives up after 5 fast restarts)
+StartLimitIntervalSec=0
 Description=VTG Display Player (video + image, shared)
 After=network.target
 

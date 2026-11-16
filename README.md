@@ -7,7 +7,7 @@ A Raspberry Pi 4 video and audio test generator for AV technicians. Plug it into
 ## Features
 
 - **Boots straight into test signals.** Video loops on HDMI and audio loops on the 3.5mm jack within seconds of power-on.
-- **HDMI auto-detect.** Video and HDMI audio go to whichever HDMI port has a display connected.
+- **HDMI auto-detect.** Video and HDMI audio go to whichever HDMI port has a display connected. Plugging in, unplugging, or moving the cable restarts the player on the right port within a few seconds.
 - **Video, image, and audio test modes**, each with play/pause/stop, next/previous, looping, and volume/mute.
 - **Image slideshows** from separate 1080p and 4K folders, with adjustable time per image.
 - **Mono Output toggle** that sums L+R so both channels carry the same signal (useful for feeding mono XLR inputs from the TRS jack).
@@ -118,10 +118,16 @@ You should see `Wifi profiles configured.`
 ```bash
 for f in ~/pi-vtg/systemd/*; do sudo ln -sf "$f" /etc/systemd/system/; done
 sudo systemctl daemon-reload
-sudo systemctl enable vtg-display.service vtg-audio.service vtg-osd.service vtg-web.service vtg-cec-init.service vtg-wifi-fallback.timer
+sudo systemctl enable vtg-display.service vtg-audio.service vtg-osd.service vtg-web.service vtg-playlog.service vtg-cec-init.service vtg-wifi-fallback.timer
 ```
 
 The unit files are symlinked rather than copied, so a `git pull` updates them too.
+
+Keep the players' control sockets in `/tmp` from being auto-deleted (Debian 13 clears `/tmp` files older than 10 days, which would cut the web UI off from the players on a unit left running):
+
+```bash
+echo 'x /tmp/vtg-*' | sudo tee /etc/tmpfiles.d/pi-vtg.conf
+```
 
 ### 7. Allow the web UI's restart and reboot buttons
 
@@ -198,7 +204,31 @@ scp my_test_video.mp4 vtg@vtg.local:~/pi-vtg/media/video/
 | `media/images_1080p` | 1920x1080 test pattern images |
 | `media/images_4k` | 3840x2160 test pattern images |
 
-Keep each folder to media files only. Every file in it is fed to the player, so stray files cause errors in the logs. Files appear in the web UI dropdowns right away. The boot playlists pick up new files on the next restart of that player (System panel or reboot).
+Only known media extensions are played (video: mp4 m4v mkv mov avi ts m2ts mpg mpeg webm wmv; audio: mp3 flac wav m4a aac ogg opus wma aif aiff; images: png jpg jpeg bmp gif webp tif tiff). Anything else in the folder, like `Thumbs.db` or macOS `._` files, is ignored. Files appear in the web UI dropdowns right away. The boot playlists pick up new files on the next restart of that player (System panel or reboot).
+
+#### Video formats the Pi 4 plays smoothly
+
+The Pi 4 only plays video smoothly when its hardware decoder handles it. Anything else falls back to the CPU and stutters (video and audio).
+
+| Codec | Max resolution / frame rate | Result |
+|---|---|---|
+| H.264 (AVC) | 1920x1080 @ 60 fps | Smooth (hardware) |
+| H.265 (HEVC) | 3840x2160 @ 60 fps | Smooth (hardware) |
+| H.264 above 1080p (e.g. 4K) | n/a | Stutters (no hardware support) |
+| VP9, AV1, MPEG-2, others | n/a | Stutters above SD (software only) |
+
+For 4K test video, use HEVC. Check a file before copying it over:
+
+```bash
+ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height,r_frame_rate -of csv=p=0 myfile.mp4
+```
+
+Convert a 4K H.264 file to 4K HEVC, or to 1080p H.264 (run on any computer with ffmpeg):
+
+```bash
+ffmpeg -i in.mp4 -c:v libx265 -preset medium -crf 22 -pix_fmt yuv420p -tag:v hvc1 -c:a aac -b:a 192k out_4k_hevc.mp4
+ffmpeg -i in.mp4 -vf scale=1920:-2 -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k out_1080p.mp4
+```
 
 ## Troubleshooting
 
@@ -214,11 +244,39 @@ Replace `vtg-display` with `vtg-audio`, `vtg-web`, `vtg-osd`, `vtg-cec-init`, or
 
 | Symptom | Check |
 |---|---|
-| No picture | Moved the HDMI cable to the other port after boot? The port is picked at startup; restart the display player or reboot. |
-| No HDMI audio | Same as above: HDMI audio follows the detected port. |
+| No picture | Wait about 10 seconds after plugging in; the player restarts on the connected port. Still nothing: `journalctl -u vtg-display -b` and check the cable/adapter. |
+| No HDMI audio | HDMI audio follows the video port. Some monitors (DVI adapters, many PC monitors) have no audio; the video still plays. |
+| Skips to the next video early | Check the [play log](#play-log). `EARLY END` = damaged file (scan it, see below). `HDMI ... disconnected` before the skip = the display dropped (TV standby, input switch, switcher or extender); the player restarts on reconnect and starts the playlist from the top. |
+| Video/audio stutter | The file is a format the Pi 4 can't decode in hardware. See [Video formats](#video-formats-the-pi-4-plays-smoothly). |
 | Web UI unreachable on wifi | Look at the OSD for the current IP and SSID. On the hotspot, use `10.1.1.10:5000`. |
 | Hotspot didn't appear | `journalctl -u vtg-wifi-fallback -b` and confirm `secrets.env` values match step 5. |
 | `ERROR: ... not running` on the OSD | `journalctl -u <that service> -b` |
+
+### Play log
+
+`vtg-playlog` records every video the display player plays: when it started, how long it ran, and why it stopped. It also logs HDMI connect/disconnect and unclean shutdowns (power pulled). It's capped at 3 MB total (1 MB file + 2 old copies) in `~/pi-vtg/state/`.
+
+```bash
+tail -50 ~/pi-vtg/state/playlog.log
+```
+
+| Ending | Meaning |
+|---|---|
+| `finished (reached end of file)` | Normal |
+| `EARLY END` | Stopped short of the end; the file is likely damaged |
+| `stopped by command: web UI: next button (video)` | Someone pressed a web UI button |
+| `stopped by command: not from the web UI` | A command came from `vtgctl` or another IPC client |
+| `FAILED: ...` | Couldn't play: no display connected, or an unplayable file. Repeats are collapsed into one line. |
+| `player shut down` / `LOST player connection` | Service restart, reboot, or player crash |
+| `POWER previous session did not shut down cleanly` | Power was pulled; shows the last saved file and position (saved every 30s) |
+
+Timestamps come from the Pi's clock. The Pi has no battery clock, so without internet (NTP) the dates will be wrong; the order and durations are still correct.
+
+To check a video file for damage (no output = clean):
+
+```bash
+ffmpeg -v error -i ~/pi-vtg/media/video/<file> -f null - 2>&1 | tail
+```
 
 A debug CLI talks to the players directly, bypassing the web UI:
 
@@ -234,7 +292,7 @@ python3 vtgctl.py audio volume 50
 cd ~/pi-vtg
 git pull
 sudo systemctl daemon-reload
-sudo systemctl restart vtg-display vtg-audio vtg-osd vtg-web
+sudo systemctl restart vtg-display vtg-audio vtg-osd vtg-web vtg-playlog
 ```
 
 ## How it works
@@ -249,6 +307,7 @@ pi-vtg/
 │   ├── web_api.py         Flask web UI + REST API (port 5000)
 │   ├── static/index.html  the web UI page
 │   ├── osd_updater.py     refreshes the on-screen status text every 2s
+│   ├── play_logger.py     play log: what played, for how long, why it stopped
 │   ├── cec_control.py     cec-ctl wrapper used by the web UI
 │   ├── cec_init.sh        registers both HDMI ports as CEC playback devices
 │   ├── wifi_setup.sh      one-time: creates the wifi + hotspot profiles
@@ -256,7 +315,7 @@ pi-vtg/
 │   └── vtgctl.py          debug CLI
 ├── systemd/              service and timer units (symlinked into /etc/systemd/system)
 ├── media/                your media (not in git)
-└── state/                saved OSD settings (not in git)
+└── state/                saved OSD settings + play log (not in git)
 ```
 
 Two long-running `mpv` processes do all playback, one for the display and one for the 3.5mm jack. Nothing restarts when you change modes. The web UI and OSD send commands over each player's IPC socket (`/tmp/vtg-display.sock` and `/tmp/vtg-audio.sock`), which keeps switching fast and lets audio and video run independently.
@@ -266,12 +325,17 @@ Service units launch scripts through `/bin/bash` instead of relying on executabl
 ## Known limitations
 
 - **One HDMI output at a time.** True simultaneous dual output isn't possible with this design: on the Pi 4's driver, only one process can render to the display hardware at once. Supporting it would take a different architecture.
-- **HDMI port is detected at startup.** Moving the cable to the other port needs a player restart or reboot.
+- **HDMI changes restart the player.** Plugging in, unplugging, a TV that drops HDMI when turned off, or moving the cable restarts the display player (about 5 to 10 seconds), and playback starts from the top of the video folder. Anything started from the web UI (images, a single file) has to be started again.
 - **4K images are scaled** to the display's current mode; the output resolution is not switched.
 - **Wifi is decided once per boot.** No automatic switching back if your network appears later.
 
 ## Roadmap
 
+In priority order:
+
+1. **Power-pull safe (read-only root).** The unit is meant to be switched off at the wall, so the SD card runs read-only with changes held in RAM. Includes a one-boot "debug mode" that keeps logs across a reboot, and keeps saved wifi networks persistent.
+2. **Wifi from the web UI.** Connect to the fallback hotspot, scan, pick an SSID, enter the password. The Pi remembers every network it has joined and reconnects to any of them on boot, not just the one in `secrets.env`.
+3. **Projector alignment mode.** Grids, crosshairs, edge markers and safe-area patterns for common aspect ratios (16:9, 16:10, 4:3, 21:9, 2.35:1, 1.85:1, 32:9), generated at the display's native resolution.
 - Physical buttons and a small LCD for on-device control
 - 3D-printed case
 - Separate 4K video playlist

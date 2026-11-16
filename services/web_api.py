@@ -2,6 +2,7 @@
 """Minimal test web UI — talks to the persistent mpv instances over IPC."""
 from pathlib import Path
 import json
+import time
 from flask import Flask, jsonify, request, send_from_directory
 from mpv_ipc import MpvIPC, MpvIPCError
 import subprocess
@@ -9,14 +10,17 @@ from cec_control import power_on as cec_power_on_fn, power_off as cec_power_off_
 
 def get_ip(iface):
     try:
-        out = subprocess.check_output(["ip", "-4", "-o", "addr", "show", iface], text=True)
+        out = subprocess.check_output(["ip", "-4", "-o", "addr", "show", iface], text=True, timeout=5)
         return out.split()[3].split("/")[0]
     except Exception:
         return None
 
 def service_active(name):
-    r = subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True)
-    return r.stdout.strip() == "active"
+    try:
+        r = subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True, timeout=5)
+        return r.stdout.strip() == "active"
+    except Exception:
+        return False
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 MEDIA_DIR = BASE_DIR / "media"
@@ -27,12 +31,38 @@ IMAGE_FOLDERS = {
     "4k": MEDIA_DIR / "images_4k",
 }
 
+# Only these are listed or played; stray files (Thumbs.db, ._ files) are ignored.
+# Keep in sync with VIDEO_EXT / AUDIO_EXT in display_player.sh / audio_player.sh.
+MEDIA_EXT = {
+    "video": {".mp4", ".m4v", ".mkv", ".mov", ".avi", ".ts", ".m2ts", ".mpg", ".mpeg", ".webm", ".wmv"},
+    "audio": {".mp3", ".flac", ".wav", ".m4a", ".aac", ".ogg", ".opus", ".wma", ".aif", ".aiff"},
+    "image": {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".tif", ".tiff"},
+}
+
+def media_files(folder, target):
+    if not folder or not folder.is_dir():
+        return []
+    exts = MEDIA_EXT.get(target, set())
+    return sorted(f for f in folder.iterdir()
+                  if f.is_file() and not f.name.startswith(".") and f.suffix.lower() in exts)
+
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
 
 def get_mpv(target):
     if target not in SOCKETS:
-        raise ValueError(f"Unknown target: {target}")
-    return MpvIPC(SOCKETS[target])
+        raise MpvIPCError(f"Unknown target: {target}")
+    # Short timeout: if a player is restarting, fail fast instead of
+    # tying up the web server while the UI keeps polling.
+    return MpvIPC(SOCKETS[target], connect_timeout=2)
+
+CMD_MARKER = Path("/tmp/vtg-last-cmd")
+
+def mark_command(desc):
+    """Note what the web UI just did, so play_logger.py can say why a file stopped."""
+    try:
+        CMD_MARKER.write_text(json.dumps({"t": time.time(), "cmd": f"web UI: {desc}"}))
+    except OSError:
+        pass
 
 @app.route("/")
 def index():
@@ -54,8 +84,7 @@ def list_media(target):
         folder = IMAGE_FOLDERS.get(request.args.get("resolution", "1080p"))
     else:
         folder = MEDIA_FOLDERS.get(target)
-    files = sorted(f.name for f in folder.iterdir() if f.is_file()) if folder and folder.exists() else []
-    return jsonify({"success": True, "files": files})
+    return jsonify({"success": True, "files": [f.name for f in media_files(folder, target)]})
 
 @app.route("/api/load/<target>", methods=["POST"])
 def load(target):
@@ -64,17 +93,23 @@ def load(target):
     folder = IMAGE_FOLDERS.get(data.get("resolution", "1080p")) if target == "image" else MEDIA_FOLDERS.get(target)
     if not folder:
         return jsonify({"success": False, "message": "Unknown target/resolution"}), 400
+    if target != "audio":
+        mark_command(f"play {target} {'file ' + str(data.get('filename')) if mode == 'single' else 'folder'}")
     try:
         mpv = get_mpv(target)
+        files = media_files(folder, target)
         if mode == "single":
-            filename = data.get("filename")
-            if not filename:
+            # Must be a file actually in the folder (blocks ../ paths and junk)
+            match = [f for f in files if f.name == data.get("filename")]
+            if not match:
                 mpv.close()
-                return jsonify({"success": False, "message": "No filename given"}), 400
-            mpv.loadfile(str(folder / filename))
+                return jsonify({"success": False, "message": "File not found in media folder"}), 400
+            mpv.loadfile(str(match[0]))
             mpv.close()
             return jsonify({"success": True})
-        files = sorted(f for f in folder.iterdir() if f.is_file())
+        if not files:
+            mpv.close()
+            return jsonify({"success": False, "message": "No media files in folder"}), 400
         mpv.load_playlist([str(f) for f in files])
         mpv.close()
         return jsonify({"success": True, "count": len(files)})
@@ -87,6 +122,8 @@ def control(target, action):
                "stop": "stop", "next": "next", "prev": "prev"}
     if action not in actions:
         return jsonify({"success": False, "message": f"Unknown action: {action}"}), 400
+    if target != "audio":
+        mark_command(f"{action} button ({target})")
     try:
         mpv = get_mpv(target)
         getattr(mpv, actions[action])()
@@ -206,6 +243,7 @@ def display_info():
 
 @app.route("/api/system/reboot", methods=["POST"])
 def system_reboot():
+    mark_command("reboot")
     try:
         subprocess.Popen(["sudo", "/usr/sbin/reboot"])
         return jsonify({"success": True})
@@ -218,6 +256,8 @@ def restart_service(service):
     unit = allowed.get(service)
     if not unit:
         return jsonify({"success": False, "message": "Unknown service"}), 400
+    if service == "display":
+        mark_command("restart display player")
     try:
         subprocess.run(["sudo", "/usr/bin/systemctl", "restart", unit], check=True, capture_output=True)
         return jsonify({"success": True})
