@@ -74,6 +74,12 @@ ssh vtg@vtg.local
 
 Use your hostname in place of `vtg`. If `.local` names don't resolve on your network, find the Pi's IP in your router and use `ssh vtg@<ip>`.
 
+**Wifi for internet, Ethernet on a network without internet** (e.g. a closed AV network used only for SSH): stop Ethernet from taking the internet route, or `apt` and `git` will fail even though `ping` works. Your SSH session may pause for a few seconds:
+
+```bash
+CON=$(nmcli -g GENERAL.CONNECTION device show eth0); sudo nmcli connection modify "$CON" ipv4.never-default yes ipv6.never-default yes && sudo nmcli connection up "$CON"
+```
+
 On the Pi:
 
 ```bash
@@ -95,8 +101,7 @@ sudo rfkill unblock wifi
 ### 4. Get the code and create the media folders
 
 ```bash
-git clone https://github.com/WonderWerks/pi-vtg.git ~/pi-vtg
-mkdir -p ~/pi-vtg/media/{video,audio,images} ~/pi-vtg/state
+git clone https://github.com/WonderWerks/pi-vtg.git ~/pi-vtg && mkdir -p ~/pi-vtg/media/{video,audio,images} ~/pi-vtg/state
 ```
 
 Media files are not included in the repo. Copy your own in from your computer (see [Adding media](#adding-media)). At minimum, put one video in `media/video` so there's something to play on boot. Audio files are optional: the 3.5mm jack loops `media/audio` at boot, and test signals (noise, tones, sweep) are built into the web UI.
