@@ -297,7 +297,7 @@ A standard 3.5mm TRS plug lands Tip = Left, Ring = Right, Sleeve = Ground. The t
 
 **Never join Tip and Ring directly** to make mono; that shorts the two outputs together. Use the Mono Output toggle instead.
 
-For mic-level inputs, long runs, or anywhere hum or phantom power is a risk, use a **DI box** (stereo or passive) between the Pi and the console instead of a direct cable. It gives you proper balanced, mic-level output and isolates the Pi from phantom power and ground loops.
+For mic-level inputs, long runs, or anywhere hum or phantom power is a risk, use a **DI box** (a passive one is fine; stereo DI for two channels) between the Pi and the console instead of a direct cable. It gives you proper balanced, mic-level output and isolates the Pi from phantom power and ground loops.
 
 A 4-pole TRRS cable (e.g. a camcorder AV cable) also fits, but its RCA colors rarely match the Pi's pinout: check with the table above before trusting the red/white/yellow labels.
 
