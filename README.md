@@ -25,8 +25,9 @@ A Raspberry Pi 4 video and audio test generator for AV technicians. Plug it into
 | microSD card | 16GB or larger |
 | Power supply | Official 5V 3A USB-C recommended |
 | Micro-HDMI to HDMI cable | One is enough; the port is auto-detected |
-| Ethernet cable | For setup; optional afterwards |
+| Ethernet cable | Recommended for setup |
 | 3.5mm audio cable | Optional, for line-level audio testing |
+| Case | Any Raspberry Pi 4 case. One with a fan or heatsink helps with long 4K playback |
 
 The Pi 4 has two micro-HDMI ports. In this project:
 
@@ -215,7 +216,7 @@ Ethernet is always DHCP and works regardless of wifi. The web UI and SSH are rea
 | Wifi | Scan and join a network, forget saved networks, switch to the hotspot |
 | System | Restart the display or audio player, run the wifi check, sync the unit's clock to your phone/laptop, reboot |
 | Power-Pull Protection | Switch Protected / Maintenance / Debug mode; shows the Maintenance countdown |
-| Errors / Debugging | Current display resolution/refresh/port, and any stopped services |
+| Display / Errors | Current output mode and port; the display's EDID (maker, model, year, preferred mode, HDMI audio, supported modes) with a download of the raw EDID; any stopped services |
 
 Video and Images share one output. Starting one replaces the other.
 

@@ -8,6 +8,7 @@ from mpv_ipc import MpvIPC, MpvIPCError
 import subprocess
 from cec_control import power_on as cec_power_on_fn, power_off as cec_power_off_fn, custom as cec_custom_fn, CEC_DEVICES
 import system_mode
+import display_info as dinfo
 
 def get_ip(iface):
     try:
@@ -46,6 +47,13 @@ def media_files(folder, target):
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
 
 WEB_ACTIVITY = Path("/tmp/vtg-web-activity")
+
+@app.after_request
+def no_cache(resp):
+    """Never let a browser keep an old copy of the page or API data
+    (after a git pull the UI must update on the next load)."""
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 @app.before_request
 def note_activity():
@@ -154,7 +162,7 @@ def set_image_speed():
 
 STATE_DIR = MEDIA_DIR.parent / "state"
 OSD_CONFIG_PATH = STATE_DIR / "osd_config.json"
-OSD_DEFAULTS = {"enabled": True, "show_ip": True, "show_web_url": True, "show_errors": True, "show_ssid": True, "show_datetime": False, "show_now_playing": False, "show_audio_track": False, "show_mode": True, "custom_message": ""}
+OSD_DEFAULTS = {"enabled": True, "show_ip": True, "show_web_url": True, "show_errors": True, "show_ssid": True, "show_datetime": False, "show_now_playing": False, "show_audio_track": False, "show_mode": True, "show_display": False, "custom_message": ""}
 
 @app.route("/api/osd/config", methods=["GET"])
 def get_osd_config():
@@ -282,21 +290,41 @@ def get_errors():
     errors = [f"{svc} not running" for svc in SYSTEM_SERVICES if not service_active(svc)]
     return jsonify({"success": True, "errors": errors})
 
+def mpv_prop(mpv, name):
+    """A property that may be unavailable (e.g. display size while idle)."""
+    try:
+        return mpv.get_property(name)
+    except MpvIPCError:
+        return None
+
+def display_size(mpv):
+    """Current output size: from mpv while it's showing something, else the
+    display's preferred mode from its EDID, else 1920x1080."""
+    w, h = mpv_prop(mpv, "display-width"), mpv_prop(mpv, "display-height")
+    if w and h:
+        return w, h
+    return dinfo.preferred_size() or (1920, 1080)
+
 @app.route("/api/display/info")
-def display_info():
+def get_display_info():
+    out = {"success": True, **dinfo.info(), "width": None, "height": None, "fps": None}
     try:
         mpv = get_mpv("video")
-        w = mpv.get_property("display-width")
-        h = mpv.get_property("display-height")
-        fps = mpv.get_property("display-fps")
+        out["width"], out["height"] = mpv_prop(mpv, "display-width"), mpv_prop(mpv, "display-height")
+        out["fps"] = mpv_prop(mpv, "display-fps")
         mpv.close()
-        try:
-            output = Path("/tmp/vtg-display-connector").read_text().strip() + " (auto-selected)"
-        except OSError:
-            output = "unknown"
-        return jsonify({"success": True, "width": w, "height": h, "fps": fps, "output": output})
-    except MpvIPCError as e:
-        return jsonify({"success": False, "message": str(e)}), 503
+    except MpvIPCError:
+        pass
+    out["output"] = out["connector"] + " (auto-selected)"
+    return jsonify(out)
+
+@app.route("/api/display/edid.bin")
+def download_edid():
+    raw = dinfo.edid_bytes()
+    if not raw:
+        return jsonify({"success": False, "message": "No EDID from the display"}), 404
+    return app.response_class(raw, mimetype="application/octet-stream",
+                              headers={"Content-Disposition": f"attachment; filename=edid-{dinfo.connector()}.bin"})
 
 @app.route("/api/system/reboot", methods=["POST"])
 def system_reboot():
@@ -350,8 +378,7 @@ def show_pattern():
     try:
         mpv = get_mpv("image")
         # Draw at the display's real resolution so lines land on real pixels
-        w = mpv.get_property("display-width") or 1920
-        h = mpv.get_property("display-height") or 1080
+        w, h = display_size(mpv)
         path = patterns.make(data.get("pattern", "grid"), data.get("aspect", "full"), w, h)
         # Per-file options: hold the image until replaced; optionally hide
         # the OSD text so it doesn't sit on top of the pattern.

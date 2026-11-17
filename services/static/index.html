@@ -73,6 +73,7 @@
   <div class="row"><label><input type="checkbox" id="osd-url"> Add web UI port (:5000) to IPs</label></div>
   <div class="row"><label><input type="checkbox" id="osd-nowplaying"> Show now playing (video/images)</label></div>
   <div class="row"><label><input type="checkbox" id="osd-audiotrack"> Show audio track</label></div>
+  <div class="row"><label><input type="checkbox" id="osd-display"> Show display name (from EDID)</label></div>
   <div class="row"><label><input type="checkbox" id="osd-errors"> Show errors</label></div>
   <input type="text" id="osd-custom-message" maxlength="80" placeholder="Custom message (overrides the above, max 80 chars)">
   <div class="row">
@@ -131,8 +132,12 @@
 </div>
 
 <div class="panel">
-  <h2>Errors / Debugging</h2>
+  <h2>Display / Errors</h2>
   <div class="display-info" id="display-info">Loading display info...</div>
+  <div class="note" id="edid-summary" style="white-space:pre-line;color:#ccc"></div>
+  <details class="note"><summary>Supported modes (<span id="edid-modes-count">0</span>)</summary>
+    <div id="edid-modes" style="margin-top:6px;line-height:1.6"></div></details>
+  <div class="row"><a id="edid-download" href="/api/display/edid.bin" style="color:#9fd;font-size:13px;display:none">Download EDID (.bin)</a></div>
   <div id="error-summary">Checking for errors...</div>
 </div>
 
@@ -412,13 +417,21 @@ async function pollErrorsAndDisplay() {
   }
   try {
     const res = await fetch("/api/display/info");
-    const data = await res.json();
-    const el = document.getElementById("display-info");
-    if (data.success && data.width) {
-      el.textContent = `Output: ${data.width}x${data.height} @ ${data.fps ? data.fps.toFixed(2) : "?"}Hz — ${data.output}`;
+    const d = await res.json();
+    const out = d.width ? `${d.width}x${d.height} @ ${d.fps ? d.fps.toFixed(2) : "?"}Hz` : "idle";
+    document.getElementById("display-info").textContent = `Output: ${out} on ${d.output} (${d.status})`;
+    const e = d.edid;
+    const lines = [];
+    if (e) {
+      lines.push(`Display: ${e.manufacturer} ${e.name || "(no name)"}, ${e.year}, EDID ${e.edid_version}`);
+      lines.push(`Preferred: ${e.preferred || "?"}   HDMI audio: ${e.hdmi_audio ? "yes" : "no"}` + (e.serial ? `   Serial: ${e.serial}` : ""));
     } else {
-      el.textContent = "Display info unavailable.";
+      lines.push(d.status === "connected" ? "Display sent no EDID." : "No display connected.");
     }
+    document.getElementById("edid-summary").textContent = lines.join(String.fromCharCode(10));
+    document.getElementById("edid-modes").textContent = d.modes.length ? d.modes.join("   ") : "none";
+    document.getElementById("edid-modes-count").textContent = d.modes.length;
+    document.getElementById("edid-download").style.display = d.edid_size ? "" : "none";
   } catch (e) {
     document.getElementById("display-info").textContent = "Display info unavailable.";
   }
@@ -433,6 +446,7 @@ const OSD_FIELDS = [
   ["osd-nowplaying", "show_now_playing"],
   ["osd-audiotrack", "show_audio_track"],
   ["osd-mode", "show_mode"],
+  ["osd-display", "show_display"],
   ["osd-errors", "show_errors"]
 ];
 
@@ -558,11 +572,11 @@ async function pollMode() {
   try {
     const res = await fetch("/api/system/mode");
     const m = await res.json();
-    let now = { prot: "PROT: safe to unplug", debug: "DEBUG: writable for this boot (logs kept)",
-                maint: "MAINT: SD card writable, shut down before unplugging" }[m.mode] || m.mode;
+    let now = { prot: "PROTECTED: safe to unplug", debug: "DEBUG: SD card writable, logs kept this boot",
+                maint: "MAINTENANCE: SD card writable, shut down before unplugging" }[m.mode] || m.mode;
     if (m.mode === "maint" && m.maint_seconds_left !== null) {
       const s = Math.floor(m.maint_seconds_left);
-      now += ` (auto-PROT in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} if idle)`;
+      now += ` (auto-protect in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} if idle)`;
     }
     let next = "";
     if (m.debug_once) next = " | Next boot: debug (writable once)";
@@ -644,6 +658,7 @@ async function wifiConnect() {
     const data = await res.json();
     document.getElementById("wifi-password").value = "";
     setStatusMsg("wifi", data.success ? `Connecting to ${ssid}... (up to 45 seconds)` : (data.message || "Connect failed."), data.success);
+    if (data.success) [3000, 8000, 15000, 25000, 40000, 55000].forEach(ms => setTimeout(pollWifi, ms));
   } catch (e) {
     setStatusMsg("wifi", "Connect request failed.", false);
   }
@@ -682,9 +697,13 @@ async function pollWifi() {
     if (w.is_hotspot) info = `Hotspot on: "${w.hotspot}" (${w.ip || "10.1.1.10"})`;
     else if (w.active) info = `Connected to "${w.active}" (${w.ip || "no IP yet"})`;
     else info = "Wifi not connected";
-    if (w.last_result && w.last_result.age < 600 && !w.last_result.message.startsWith("connecting"))
-      info += `  |  Last: ${w.last_result.message}`;
     document.getElementById("wifi-info").textContent = info;
+    const r = w.last_result;
+    if (r && r.age < 600) {
+      if (r.message.startsWith("connecting")) setStatusMsg("wifi", `Connecting to ${r.message.slice(11)}...`, true);
+      else if (r.message.startsWith("ok ")) setStatusMsg("wifi", r.message.slice(3), true);
+      else setStatusMsg("wifi", r.message, false);
+    }
 
     const box = document.getElementById("wifi-saved");
     box.replaceChildren();

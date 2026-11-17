@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from mpv_ipc import MpvIPC, MpvIPCError
 import system_mode
+import display_info
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_PATH = BASE_DIR / "state" / "osd_config.json"
@@ -17,7 +18,7 @@ AUDIO_SOCKET = "/tmp/vtg-audio.sock"
 PORT = 5000
 POLL_SECONDS = 2
 MAX_MESSAGE_LEN = 80
-MAX_NAME_LEN = 40
+MAX_NAME_LEN = 22   # OSD lines are cut off past ~45 characters
 
 DEFAULT_CONFIG = {
     "enabled": True,
@@ -29,6 +30,7 @@ DEFAULT_CONFIG = {
     "show_audio_track": False,
     "show_errors": True,
     "show_mode": True,
+    "show_display": False,
     "custom_message": "",
 }
 
@@ -103,14 +105,21 @@ def now_playing(sock):
         return f"{name} ({fmt_time(s.get('time-pos'))} / {fmt_time(s.get('duration'))}) {state}"
     return f"{name} {state}"
 
-def mode_line(mode):
+# mpv's OSD doesn't wrap: at 1080p only ~45 characters fit on a line,
+# so every line here is kept short.
+
+WIFI_DECISION_AT = 35   # wifi_fallback.sh runs ~30s after boot, takes a few seconds
+
+def mode_lines(mode):
     if mode == "prot":
-        return "Mode: PROT"
+        return ["Mode: PROTECTED (safe to unplug)"]
     if mode == "debug":
-        return "Mode: DEBUG (logs for one boot)"
+        return ["Mode: DEBUG (logs kept this boot)"]
+    lines = ["Mode: MAINTENANCE (SD card writable)"]
     left = system_mode.maint_seconds_left()
-    timer = f" - auto-PROT in {int(left) // 60}:{int(left) % 60:02d}" if left is not None else ""
-    return f"Mode: MAINT (SD card writable){timer}"
+    if left is not None:
+        lines.append(f"Auto-protect in {int(left) // 60}:{int(left) % 60:02d} if idle")
+    return lines
 
 def build_status_text(cfg):
     custom = (cfg.get("custom_message") or "").strip()
@@ -120,7 +129,7 @@ def build_status_text(cfg):
     lines = []
     mode = system_mode.current_mode()
     if cfg.get("show_mode", True):
-        lines.append(mode_line(mode))
+        lines += mode_lines(mode)
     if cfg.get("show_datetime", False):
         lines.append(datetime.now().strftime("%Y-%m-%d %H:%M"))
 
@@ -132,18 +141,25 @@ def build_status_text(cfg):
         eth, wlan = get_ip("eth0"), get_ip("wlan0")
         lines.append(f"eth0: {eth + port if eth else 'not connected'}")
         if on_hotspot:
-            lines.append(f'Hotspot: join wifi "{ssid}", then open {wlan or "10.1.1.10"}{port}')
+            lines.append(f"Hotspot wifi: {ssid}")
+            lines.append(f"Web UI: {wlan or '10.1.1.10'}{port}")
+        elif wlan:
+            lines.append(f"wlan0: {wlan}{port}")
         else:
-            lines.append(f"wlan0: {wlan + port if wlan else 'not connected'}")
+            wait = WIFI_DECISION_AT - system_mode.uptime()
+            lines.append(f"wlan0: searching, hotspot in {int(wait)}s" if wait > 0
+                         else "wlan0: not connected")
     if cfg.get("show_ssid", True) and not (on_hotspot and cfg.get("show_ip", True)):
         lines.append(f"SSID: {ssid}{' (hotspot)' if on_hotspot else ''}" if ssid else "SSID: not connected")
+    if cfg.get("show_display", False):
+        lines.append(f"Display: {display_info.short_label()}")
     if cfg.get("show_now_playing", False):
         lines.append(f"Display: {now_playing(DISPLAY_SOCKET)}")
     if cfg.get("show_audio_track", False):
         lines.append(f"Audio: {now_playing(AUDIO_SOCKET)}")
     if cfg.get("show_errors", True):
         if mode != "prot" and not cfg.get("show_mode", True):
-            lines.append(mode_line(mode))   # never hide a writable card
+            lines += mode_lines(mode)   # never hide a writable card
         for svc in ("vtg-display.service", "vtg-audio.service", "vtg-web.service"):
             if not service_active(svc):
                 lines.append(f"ERROR: {svc} not running")
