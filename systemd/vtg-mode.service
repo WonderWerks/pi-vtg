@@ -1,5 +1,5 @@
 [Unit]
-Description=VTG protected-mode check (ends a one-boot debug session)
+Description=VTG read-only mode check (ends a one-boot debug session)
 After=local-fs.target
 
 [Service]

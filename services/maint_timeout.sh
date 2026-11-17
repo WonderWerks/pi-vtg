@@ -1,7 +1,7 @@
 #!/bin/bash
 # Maintenance-mode idle timeout (runs as root, vtg-maint-timeout.service).
 # If the card is writable (Maintenance) and nobody has done anything for
-# IDLE_LIMIT seconds, switch back to Protected and reboot, so a unit left
+# IDLE_LIMIT seconds, switch back to Read-only and reboot, so a unit left
 # in Maintenance is safe to unplug again.
 #
 # Activity = a web UI action (any button/setting change), an SSH or SFTP
@@ -36,9 +36,9 @@ while true; do
     deadline=$((last + IDLE_LIMIT))
     echo "$deadline" > "$DEADLINE_FILE"
     if [ "$now" -ge "$deadline" ]; then
-        echo "vtg maint-timeout: idle for ${IDLE_LIMIT}s, switching to protected mode"
+        echo "vtg maint-timeout: idle for ${IDLE_LIMIT}s, switching to read-only mode"
         rm -f "$DEADLINE_FILE"
-        exec bash "$DIR/vtg_mode.sh" protect
+        exec bash "$DIR/vtg_mode.sh" readonly
     fi
     sleep "$CHECK"
 done

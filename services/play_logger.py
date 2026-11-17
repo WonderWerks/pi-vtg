@@ -240,7 +240,7 @@ def main():
     log = setup_log()
     prev = last_line(LOG_PATH)
     protected = system_mode.protected_now()
-    log.info("LOGGER  started" + ("  (protected mode: this boot's log is in RAM and is lost at power-off;"
+    log.info("LOGGER  started" + ("  (read-only mode: this boot's log is in RAM and is lost at power-off;"
                                   " use Debug mode to keep it)" if protected else "  (writable: log is kept)"))
     # Power-loss detection only on writable boots: in protected mode the
     # card holds a stale log from the last writable session.

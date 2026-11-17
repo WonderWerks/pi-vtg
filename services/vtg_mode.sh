@@ -1,17 +1,18 @@
 #!/bin/bash
-# Protected / maintenance mode for power-pull safety. Runs as root
+# Read-only / maintenance mode for power-pull safety. Runs as root
 # (the web UI calls it through sudo).
 #
-#   Protected:   SD card is read-only; all writes go to RAM and vanish at
+#   Read-only:   SD card is read-only; all writes go to RAM and vanish at
 #                power-off. Safe to pull the plug at any time.
 #   Maintenance: SD card is writable (add media, git pull, apt upgrade).
 #                Shut down properly before removing power.
 #   Debug:       writable for ONE boot so logs survive a reboot, then the
-#                following boot is protected again automatically.
+#                following boot is read-only again automatically.
 #
 # Usage:
 #   vtg_mode.sh status
-#   vtg_mode.sh protect | maintenance | debug    (switches, then reboots)
+#   vtg_mode.sh readonly | maintenance | debug   (switches, then reboots;
+#                                                 'protect' = readonly)
 #   vtg_mode.sh persist <path>...                (save to the card now)
 #   vtg_mode.sh boot                             (run by vtg-mode.service)
 #   vtg_mode.sh settime <unix-seconds>           (set the clock)
@@ -88,8 +89,8 @@ persist() {
 
 status() {
     local now next debug
-    now_protected && now=protected || now=writable
-    next_protected && next=protected || next=writable
+    now_protected && now=read-only || now=writable
+    next_protected && next=read-only || next=writable
     [ -e "$DEBUG_FLAG" ] && debug=yes || debug=no
     echo "now=$now next_boot=$next debug_once=$debug"
 }
@@ -97,9 +98,9 @@ status() {
 case "${1:-}" in
     status)
         status ;;
-    protect)
+    readonly|protect)
         boot_rw; rm -f "$DEBUG_FLAG"
-        echo "vtg_mode: enabling protected mode (can take a minute)"
+        echo "vtg_mode: enabling read-only mode (can take a minute)"
         touch "$ARMED"   # from now on, Maintenance mode times out (maint_timeout.sh)
         set_overlay 0
         do_reboot ;;
@@ -119,7 +120,7 @@ case "${1:-}" in
         if [ -e "$DEBUG_FLAG" ]; then
             boot_rw; rm -f "$DEBUG_FLAG"; sync
             if ! now_protected; then
-                echo "vtg_mode: debug boot (writable, logs kept); protected again next boot"
+                echo "vtg_mode: debug boot (writable, logs kept); read-only again next boot"
                 touch /run/vtg-debug-boot   # read by the OSD / web UI / idle timeout
                 set_overlay 0
             fi

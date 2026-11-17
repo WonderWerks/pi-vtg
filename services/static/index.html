@@ -67,7 +67,7 @@
 <div class="panel">
   <h2>OSD</h2>
   <div class="row"><label><input type="checkbox" id="osd-enabled"> Enabled</label></div>
-  <div class="row"><label><input type="checkbox" id="osd-mode"> Show protection mode (top line)</label></div>
+  <div class="row"><label><input type="checkbox" id="osd-mode"> Show SD card mode (top line)</label></div>
   <div class="row"><label><input type="checkbox" id="osd-datetime"> Show date/time</label></div>
   <div class="row"><label><input type="checkbox" id="osd-ip"> Show IP addresses</label></div>
   <div class="row"><label><input type="checkbox" id="osd-ssid"> Show SSID</label></div>
@@ -140,10 +140,10 @@
 </div>
 
 <div class="panel">
-  <h2>Power-Pull Protection</h2>
+  <h2>SD Card Mode</h2>
   <div class="display-info" id="mode-info">Checking...</div>
   <div class="row">
-    <button onclick="setMode('protect')">Protect (read-only)</button>
+    <button onclick="setMode('protect')">Read-only (safe to unplug)</button>
     <button onclick="setMode('maintenance')">Maintenance (writable)</button>
     <button onclick="setMode('debug')">Debug: keep logs for one boot</button>
   </div>
@@ -568,9 +568,9 @@ async function rebootDevice() {
 }
 
 const MODE_CONFIRM = {
-  protect: "Switch to PROTECTED mode and reboot?\n\nThe SD card becomes read-only: safe to unplug at any time. Media copied in afterwards is lost at power-off. Enabling can take a minute before the reboot.",
-  maintenance: "Switch to MAINTENANCE mode and reboot?\n\nThe SD card becomes writable so you can add media or update. Shut down properly (Reboot button or 'sudo poweroff') before unplugging until you switch back to Protected.",
-  debug: "Reboot into DEBUG mode?\n\nWritable for one boot so the play log and system logs are kept. The boot after that is protected again automatically."
+  protect: "Switch to READ-ONLY mode and reboot?\n\nThe SD card becomes read-only: safe to unplug at any time. Media copied in afterwards is lost at power-off. Enabling can take a minute before the reboot.",
+  maintenance: "Switch to MAINTENANCE mode and reboot?\n\nThe SD card becomes writable so you can add media or update. Shut down properly (Reboot button or 'sudo poweroff') before unplugging until you switch back to Read-only.",
+  debug: "Reboot into DEBUG mode?\n\nWritable for one boot so the play log and system logs are kept. The boot after that is read-only again automatically."
 };
 
 async function setMode(mode) {
@@ -589,15 +589,15 @@ async function pollMode() {
   try {
     const res = await fetch("/api/system/mode");
     const m = await res.json();
-    let now = { prot: "PROTECTED: safe to unplug", debug: "DEBUG: SD card writable, logs kept this boot",
+    let now = { prot: "READ-ONLY: safe to unplug", debug: "DEBUG: SD card writable, logs kept this boot",
                 maint: "MAINTENANCE: SD card writable, shut down before unplugging" }[m.mode] || m.mode;
     if (m.mode === "maint" && m.maint_seconds_left !== null) {
       const s = Math.floor(m.maint_seconds_left);
-      now += ` (auto-protect in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} if idle)`;
+      now += ` (read-only in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} if idle)`;
     }
     let next = "";
     if (m.debug_once) next = " | Next boot: debug (writable once)";
-    else if (m.protected_next_boot !== m.protected_now) next = ` | Next boot: ${m.protected_next_boot ? "protected" : "writable"}`;
+    else if (m.protected_next_boot !== m.protected_now) next = ` | Next boot: ${m.protected_next_boot ? "read-only" : "writable"}`;
     el.textContent = `Now: ${now}${next}`;
     el.style.color = m.protected_now ? "" : "#fc6";
   } catch (e) {

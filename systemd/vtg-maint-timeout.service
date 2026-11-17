@@ -1,5 +1,5 @@
 [Unit]
-Description=VTG maintenance-mode idle timeout (back to protected after 5 idle minutes)
+Description=VTG maintenance-mode idle timeout (back to read-only after 11:11 idle)
 After=vtg-mode.service
 
 [Service]

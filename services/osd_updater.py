@@ -114,13 +114,13 @@ WIFI_DECISION_AT = 35   # wifi_fallback.sh runs ~30s after boot, takes a few sec
 
 def mode_lines(mode):
     if mode == "prot":
-        return ["Mode: PROTECTED (safe to unplug)"]
+        return ["Mode: READ-ONLY (safe to unplug)"]
     if mode == "debug":
         return ["Mode: DEBUG (logs kept this boot)"]
     lines = ["Mode: MAINTENANCE (SD card writable)"]
     left = system_mode.maint_seconds_left()
     if left is not None:
-        lines.append(f"Auto-protect in {int(left) // 60}:{int(left) % 60:02d} if idle")
+        lines.append(f"Read-only in {int(left) // 60}:{int(left) % 60:02d} if idle")
     return lines
 
 def build_status_text(cfg):

@@ -224,9 +224,11 @@ def get_mode():
 
 @app.route("/api/system/mode/<mode>", methods=["POST"])
 def set_mode(mode):
+    if mode == "readonly":
+        mode = "protect"
     if mode not in ("protect", "maintenance", "debug"):
         return jsonify({"success": False, "message": "Unknown mode"}), 400
-    mark_command(f"switch to {mode} mode (reboot)")
+    mark_command(f"switch to {'read-only' if mode == 'protect' else mode} mode (reboot)")
     try:
         # Runs in the background: enabling protection can take a minute, then reboots
         subprocess.Popen(["sudo", "/usr/bin/bash", str(MODE_SCRIPT), mode])
