@@ -10,7 +10,7 @@
 #
 # Times are uptime seconds, not the clock, so a clock sync can't trigger it.
 
-IDLE_LIMIT=300
+IDLE_LIMIT=671   # 11:11
 CHECK=10
 DEADLINE_FILE=/run/vtg-maint-deadline     # read by the OSD and web UI
 WEB_ACTIVITY=/tmp/vtg-web-activity        # web_api.py writes uptime here on each action

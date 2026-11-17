@@ -344,7 +344,7 @@ sudo bash ~/pi-vtg/services/vtg_mode.sh maintenance   # or: protect, debug, stat
 
 Each switch reboots the unit. The OSD's top line shows the current mode: `Mode: PROT`, `Mode: MAINT (SD card writable)` or `Mode: DEBUG (logs for one boot)`.
 
-**Maintenance times out.** If nothing happens for 5 minutes (no web UI actions, no SSH/SFTP session, no `apt` or `git` running), the unit switches back to Protected on its own and reboots. The OSD counts down: `auto-PROT in 4:12`. This keeps a unit that was left in Maintenance safe to unplug.
+**Maintenance times out.** If nothing happens for 11 minutes 11 seconds (no web UI actions, no SSH/SFTP session, no `apt` or `git` running), the unit switches back to Protected on its own and reboots. The OSD counts down: `Auto-protect in 10:42 if idle`. This keeps a unit that was left in Maintenance safe to unplug.
 
 Settings changed in the web UI (OSD options) are written through to the card even while protected, so they survive power-off. The play log in Protected mode lasts only until power-off; use Debug mode to keep it.
 
