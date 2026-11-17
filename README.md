@@ -269,6 +269,38 @@ ffmpeg -i in.mp4 -c:v libx265 -preset medium -crf 22 -pix_fmt yuv420p -tag:v hvc
 ffmpeg -i in.mp4 -vf scale=1920:-2 -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k out_1080p.mp4
 ```
 
+### Audio adapter wiring (3.5mm jack)
+
+The Pi 4's 3.5mm jack is a 4-pole (TRRS) socket carrying **unbalanced, consumer line-level** stereo audio. An ordinary 3-pole stereo plug (TRS) works in it, and all the cables below start from one.
+
+**Pi 4 jack pinout**
+
+| Contact | Signal |
+|---|---|
+| Tip | Left |
+| Ring 1 | Right |
+| Ring 2 | Ground |
+| Sleeve | Composite video (not used by pi-vtg) |
+
+A standard 3.5mm TRS plug lands Tip = Left, Ring = Right, Sleeve = Ground. The tables below use that plug.
+
+**Cables you can make**
+
+| To | Wiring (3.5mm TRS plug → other end) | Notes |
+|---|---|---|
+| 2x RCA (stereo) | Tip → left RCA center; Ring → right RCA center; Sleeve → both RCA shields | Most common; also sold ready-made |
+| 2x 1/4" TS (stereo) | Tip → left TS tip; Ring → right TS tip; Sleeve → both TS sleeves | Two unbalanced line inputs |
+| 1x 1/4" TS (mono) | Tip → TS tip; Sleeve → TS sleeve; Ring not connected | Turn on **Mono Output** in the web UI so the left channel carries both |
+| 1/4" TRS balanced line input (mono) | Tip → TRS tip (hot); Sleeve → TRS ring (cold) **and** TRS sleeve; Ring not connected | Unbalanced-to-balanced: cold tied to ground at the Pi end. Turn on **Mono Output**. Do **not** use a stereo headphone TRS cable into a balanced input; it feeds the right channel into cold. |
+| XLR male (mono, into a mixer) | Tip → pin 2 (hot); Sleeve → pin 1 (ground) **and** pin 3 (cold); Ring not connected | Turn on **Mono Output**. Line inputs only, or a mic input with the gain down / pad on. **Phantom power must be off.** |
+| XLR, two channels | Two XLR males as above: Tip → first XLR pin 2; Ring → second XLR pin 2; Sleeve → pins 1 and 3 of both | Stereo into two mixer channels |
+
+**Never join Tip and Ring directly** to make mono; that shorts the two outputs together. Use the Mono Output toggle instead.
+
+For mic-level inputs, long runs, or anywhere hum or phantom power is a risk, use a **DI box** (stereo or passive) between the Pi and the console instead of a direct cable. It gives you proper balanced, mic-level output and isolates the Pi from phantom power and ground loops.
+
+A 4-pole TRRS cable (e.g. a camcorder AV cable) also fits, but its RCA colors rarely match the Pi's pinout: check with the table above before trusting the red/white/yellow labels.
+
 ## Troubleshooting
 
 ```bash
