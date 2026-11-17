@@ -5,7 +5,7 @@ Writes one line per event to state/playlog.log: what started, how long it
 ran, and why it ended (finished, early end, web UI command, error, player
 shutdown/crash, power loss). Also logs HDMI connect/disconnect.
 
-Size is capped: 1 MB per file, 2 old copies kept (3 MB max).
+Size is capped: 2 MB per file, 3 old copies kept (8 MB max).
 """
 import glob
 import json
@@ -26,8 +26,8 @@ CHECKPOINT_PATH = STATE_DIR / "playlog.current"  # last known file/position
 CMD_MARKER = Path("/tmp/vtg-last-cmd")            # written by web_api.py
 SOCKET = "/tmp/vtg-display.sock"
 
-MAX_BYTES = 1_000_000
-BACKUPS = 2
+MAX_BYTES = 2_000_000
+BACKUPS = 3
 POLL_SECONDS = 2
 CHECKPOINT_SECONDS = 30   # how often to save position (for power-loss reports)
 MARKER_WINDOW = 10        # a web command this recent explains a stop

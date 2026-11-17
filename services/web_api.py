@@ -26,11 +26,7 @@ def service_active(name):
 BASE_DIR = Path(__file__).resolve().parent.parent
 MEDIA_DIR = BASE_DIR / "media"
 SOCKETS = {"video": "/tmp/vtg-display.sock", "audio": "/tmp/vtg-audio.sock", "image": "/tmp/vtg-display.sock"}
-MEDIA_FOLDERS = {"video": MEDIA_DIR / "video", "audio": MEDIA_DIR / "audio"}
-IMAGE_FOLDERS = {
-    "1080p": MEDIA_DIR / "images_1080p",
-    "4k": MEDIA_DIR / "images_4k",
-}
+MEDIA_FOLDERS = {"video": MEDIA_DIR / "video", "audio": MEDIA_DIR / "audio", "image": MEDIA_DIR / "images"}
 
 # Only these are listed or played; stray files (Thumbs.db, ._ files) are ignored.
 # Keep in sync with VIDEO_EXT / AUDIO_EXT in display_player.sh / audio_player.sh.
@@ -48,6 +44,18 @@ def media_files(folder, target):
                   if f.is_file() and not f.name.startswith(".") and f.suffix.lower() in exts)
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
+
+WEB_ACTIVITY = Path("/tmp/vtg-web-activity")
+
+@app.before_request
+def note_activity():
+    """Any web UI action (not the background status polling) counts as
+    activity for the maintenance-mode idle timeout (maint_timeout.sh)."""
+    if request.method == "POST":
+        try:
+            WEB_ACTIVITY.write_text(str(int(system_mode.uptime())))
+        except OSError:
+            pass
 
 def get_mpv(target):
     if target not in SOCKETS:
@@ -81,19 +89,16 @@ def status(target):
 
 @app.route("/api/media/<target>")
 def list_media(target):
-    if target == "image":
-        folder = IMAGE_FOLDERS.get(request.args.get("resolution", "1080p"))
-    else:
-        folder = MEDIA_FOLDERS.get(target)
+    folder = MEDIA_FOLDERS.get(target)
     return jsonify({"success": True, "files": [f.name for f in media_files(folder, target)]})
 
 @app.route("/api/load/<target>", methods=["POST"])
 def load(target):
     data = request.json or {}
     mode = data.get("mode", "folder")
-    folder = IMAGE_FOLDERS.get(data.get("resolution", "1080p")) if target == "image" else MEDIA_FOLDERS.get(target)
+    folder = MEDIA_FOLDERS.get(target)
     if not folder:
-        return jsonify({"success": False, "message": "Unknown target/resolution"}), 400
+        return jsonify({"success": False, "message": "Unknown target"}), 400
     if target != "audio":
         mark_command(f"play {target} {'file ' + str(data.get('filename')) if mode == 'single' else 'folder'}")
     try:
@@ -183,6 +188,26 @@ def persist(*paths):
         return r.returncode == 0, (r.stderr or r.stdout).strip()[-200:]
     except Exception as e:
         return False, str(e)
+
+@app.route("/api/system/time", methods=["GET"])
+def get_time():
+    return jsonify({"success": True, "epoch": time.time(), "local": time.strftime("%Y-%m-%d %H:%M:%S %Z")})
+
+@app.route("/api/system/time", methods=["POST"])
+def set_time():
+    """Set the Pi's clock from the browser (handy offline: no RTC, no NTP)."""
+    try:
+        epoch = int((request.json or {}).get("epoch"))
+    except (TypeError, ValueError):
+        return jsonify({"success": False, "message": "Invalid time"}), 400
+    try:
+        r = subprocess.run(["sudo", "/usr/bin/bash", str(MODE_SCRIPT), "settime", str(epoch)],
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            return jsonify({"success": False, "message": r.stderr.strip()[-200:]}), 500
+        return jsonify({"success": True, "local": time.strftime("%Y-%m-%d %H:%M:%S %Z")})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route("/api/system/mode")
 def get_mode():

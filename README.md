@@ -9,7 +9,8 @@ A Raspberry Pi 4 video and audio test generator for AV technicians. Plug it into
 - **Boots straight into test signals.** Video loops on HDMI and audio loops on the 3.5mm jack within seconds of power-on.
 - **HDMI auto-detect.** Video and HDMI audio go to whichever HDMI port has a display connected. Plugging in, unplugging, or moving the cable restarts the player on the right port within a few seconds.
 - **Video, image, and audio test modes**, each with play/pause/stop, next/previous, looping, and volume/mute.
-- **Image slideshows** from separate 1080p and 4K folders, with adjustable time per image.
+- **Image slideshows** with adjustable time per image.
+- **Projector alignment patterns** (grid, framing, overscan, focus, grayscale, solid fields) for common aspect ratios, drawn at the display's native resolution.
 - **Mono Output toggle** that sums L+R so both channels carry the same signal (useful for feeding mono XLR inputs from the TRS jack).
 - **On-screen display (OSD)** showing IP addresses, SSID, web UI port, and service errors. Optional date/time, now-playing, and audio track lines. A custom message box displays any text on screen.
 - **HDMI-CEC** power on/off and raw `cec-ctl` commands, per port or both.
@@ -84,7 +85,7 @@ sudo rfkill unblock wifi
 
 ```bash
 git clone https://github.com/WonderWerks/pi-vtg.git ~/pi-vtg
-mkdir -p ~/pi-vtg/media/{video,audio,images_1080p,images_4k} ~/pi-vtg/state
+mkdir -p ~/pi-vtg/media/{video,audio,images} ~/pi-vtg/state
 ```
 
 Media files are not included in the repo. Copy your own in from your computer (see [Adding media](#adding-media)). At minimum, put one video in `media/video` and one audio file in `media/audio` so there's something to play on boot.
@@ -99,12 +100,12 @@ cp secrets.env.example secrets.env
 nano secrets.env
 ```
 
-Fill in all four values:
+Fill in the values:
 
 | Variable | Meaning |
 |---|---|
-| `WIFI_SSID` / `WIFI_PASSWORD` | A first network to join (more can be added later from the web UI) |
-| `FALLBACK_SSID` / `FALLBACK_PASSWORD` | The hotspot it broadcasts if that network isn't found (password: 8+ characters) |
+| `WIFI_SSID` / `WIFI_PASSWORD` | Optional. A network to know from the start, like your travel router. Leave blank to add networks from the web UI only. |
+| `FALLBACK_SSID` / `FALLBACK_PASSWORD` | Required. The hotspot it broadcasts when no saved network is in range (password: 8+ characters) |
 
 Save (Ctrl+O, Enter, Ctrl+X), then lock down the file and create the wifi profiles:
 
@@ -120,7 +121,7 @@ You should see `Wifi profiles configured.`
 ```bash
 for f in ~/pi-vtg/systemd/*; do sudo ln -sf "$f" /etc/systemd/system/; done
 sudo systemctl daemon-reload
-sudo systemctl enable vtg-display.service vtg-audio.service vtg-osd.service vtg-web.service vtg-playlog.service vtg-mode.service vtg-cec-init.service vtg-wifi-fallback.timer
+sudo systemctl enable vtg-display.service vtg-audio.service vtg-osd.service vtg-web.service vtg-playlog.service vtg-mode.service vtg-maint-timeout.service vtg-cec-init.service vtg-wifi-fallback.timer
 ```
 
 The unit files are symlinked rather than copied, so a `git pull` updates them too.
@@ -156,7 +157,7 @@ systemctl status 'vtg-*' --no-pager
 
 ### 9. Turn on power-pull protection (last step)
 
-Only do this once everything works and **all your media is loaded**. It makes the SD card read-only:
+Until now the SD card has been writable, so shut down properly (`sudo poweroff`) rather than pulling power. This step makes the card read-only and does the final reboot. Only run it once everything works and **all your media is loaded**:
 
 ```bash
 sudo bash ~/pi-vtg/services/vtg_mode.sh protect
@@ -168,7 +169,7 @@ It takes up to a minute, then reboots. Check it took effect:
 sudo bash ~/pi-vtg/services/vtg_mode.sh status
 ```
 
-You should see `now=protected next_boot=protected`, and the OSD no longer shows `MAINTENANCE MODE`.
+You should see `now=protected next_boot=protected`, and the OSD's top line reads `Mode: PROT`. From here on the unit boots protected every time, and Maintenance mode times out after 5 idle minutes.
 
 ## Usage
 
@@ -185,11 +186,20 @@ Images do not start on boot. Start them from the Images panel in the web UI.
 
 ### Wifi behavior
 
-1. At boot, the Pi tries to join `WIFI_SSID`.
-2. About 30 seconds after boot, a one-time check runs. If wifi still isn't connected, it gives `WIFI_SSID` one more 15-second try, then starts the `FALLBACK_SSID` hotspot.
-3. The decision holds until the next reboot. To retry after changing locations, reboot or press **Run Wifi Check Now** in the System panel.
+The unit remembers every wifi network it has joined (from `secrets.env` or the web UI).
 
-On the hotspot, the Pi is always at **10.1.1.10**, so the web UI is at `http://10.1.1.10:5000`. The OSD shows `(FALLBACK HOTSPOT)` next to the SSID when it's active. If Ethernet is also connected, hotspot clients get internet access through it.
+| When | What happens |
+|---|---|
+| Boot | It joins any saved network that's in range. If `WIFI_SSID` is set and in range, that one is preferred. |
+| 30 seconds after boot, nothing joined | It starts its own hotspot (`FALLBACK_SSID`) and stays on it until the next reboot. |
+| You pick a network in the web UI | It switches to that network now and saves it for next time. If joining fails (wrong password, out of range), it goes back to the previous network or the hotspot within about a minute. |
+
+Typical uses:
+
+- **Known site or travel router:** put it in `secrets.env` (or add it once from the web UI). The unit joins it on its own at every boot.
+- **New site:** the unit starts its hotspot. Join the hotspot from your phone, open `http://10.1.1.10:5000`, and pick the site's network in the **Wifi** panel.
+
+On the hotspot the unit is always at **10.1.1.10**, and the OSD shows how to connect: `Hotspot: join wifi "<name>", then open 10.1.1.10:5000`. If Ethernet is also connected, hotspot clients get internet access through it.
 
 Ethernet is always DHCP and works regardless of wifi. The web UI and SSH are reachable on both interfaces.
 
@@ -198,13 +208,13 @@ Ethernet is always DHCP and works regardless of wifi. The web UI and SSH are rea
 | Panel | What it does |
 |---|---|
 | Video | Pick a file or play the whole folder; play/pause/stop/next/prev; loop; volume; mute |
-| Images | Choose the 1080p or 4K folder; set seconds per image; same transport controls. **Alignment patterns**: grid, screen framing, overscan/safe areas, crosshatch, focus, grayscale steps and solid fields, for any common aspect ratio (16:9, 16:10, 4:3, 5:4, 1.85, 1.90, 2.00, 2.35, 2.39, 21:9, 32:9), drawn at the display's native resolution |
+| Images | Pick an image or play the folder as a slideshow; set seconds per image; same transport controls. **Alignment patterns**: grid, screen framing, overscan/safe areas, crosshatch, focus, grayscale steps and solid fields, for any common aspect ratio (16:9, 16:10, 4:3, 5:4, 1.85, 1.90, 2.00, 2.35, 2.39, 21:9, 32:9), drawn at the display's native resolution |
 | Audio Test | Same controls for the 3.5mm output, plus the Mono Output toggle |
 | CEC | Power on/off and raw `cec-ctl` arguments, to either or both HDMI ports |
 | OSD | Turn OSD lines on/off (including the protection mode readout); set a custom on-screen message (max 80 characters) |
 | Wifi | Scan and join a network, forget saved networks, switch to the hotspot |
-| System | Restart the display or audio player, run the wifi check, reboot |
-| Power-Pull Protection | Switch Protected / Maintenance / Debug mode |
+| System | Restart the display or audio player, run the wifi check, sync the unit's clock to your phone/laptop, reboot |
+| Power-Pull Protection | Switch Protected / Maintenance / Debug mode; shows the Maintenance countdown |
 | Errors / Debugging | Current display resolution/refresh/port, and any stopped services |
 
 Video and Images share one output. Starting one replaces the other.
@@ -223,8 +233,7 @@ scp my_test_video.mp4 vtg@vtg.local:~/pi-vtg/media/video/
 |---|---|
 | `media/video` | Video files (`.mp4`, `.mkv`, etc.) |
 | `media/audio` | Audio files: pink noise, white noise, music (`.mp3`, `.flac`, `.wav`) |
-| `media/images_1080p` | 1920x1080 test pattern images |
-| `media/images_4k` | 3840x2160 test pattern images |
+| `media/images` | Still images (test patterns, slides); scaled to fit the display |
 
 Only known media extensions are played (video: mp4 m4v mkv mov avi ts m2ts mpg mpeg webm wmv; audio: mp3 flac wav m4a aac ogg opus wma aif aiff; images: png jpg jpeg bmp gif webp tif tiff). Anything else in the folder, like `Thumbs.db` or macOS `._` files, is ignored. Files appear in the web UI dropdowns right away. The boot playlists pick up new files on the next restart of that player (System panel or reboot).
 
@@ -311,7 +320,7 @@ python3 vtgctl.py audio volume 50
 
 ## Power-pull protection
 
-The unit is built to be switched off at the wall. Pulling power while the SD card is being written can corrupt it, so in normal use the card is read-only and every change goes to RAM instead.
+The unit is built to be switched off at the wall. SD cards are easily damaged by losing power mid-write, and a damaged card often means a unit that won't boot until it's re-imaged. So in normal use the card is read-only and every change goes to RAM instead.
 
 | Mode | SD card | Unplug anytime? | Use for |
 |---|---|---|---|
@@ -325,7 +334,9 @@ Switch from the web UI (**Power-Pull Protection** panel) or over SSH:
 sudo bash ~/pi-vtg/services/vtg_mode.sh maintenance   # or: protect, debug, status
 ```
 
-Each switch reboots the unit. In Maintenance or Debug, the OSD shows `MAINTENANCE MODE: shut down before unplugging`.
+Each switch reboots the unit. The OSD's top line shows the current mode: `Mode: PROT`, `Mode: MAINT (SD card writable)` or `Mode: DEBUG (logs for one boot)`.
+
+**Maintenance times out.** If nothing happens for 5 minutes (no web UI actions, no SSH/SFTP session, no `apt` or `git` running), the unit switches back to Protected on its own and reboots. The OSD counts down: `auto-PROT in 4:12`. This keeps a unit that was left in Maintenance safe to unplug.
 
 Settings changed in the web UI (OSD options) are written through to the card even while protected, so they survive power-off. The play log in Protected mode lasts only until power-off; use Debug mode to keep it.
 
@@ -362,7 +373,8 @@ pi-vtg/
 │   ├── static/index.html  the web UI page
 │   ├── osd_updater.py     refreshes the on-screen status text every 2s
 │   ├── play_logger.py     play log: what played, for how long, why it stopped
-│   ├── vtg_mode.sh        protected / maintenance / debug mode switching
+│   ├── vtg_mode.sh        protected / maintenance / debug mode switching, clock set
+│   ├── maint_timeout.sh   maintenance mode: back to protected after 5 idle minutes
 │   ├── system_mode.py     reads the current mode (for the web UI and OSD)
 │   ├── cec_control.py     cec-ctl wrapper used by the web UI
 │   ├── cec_init.sh        registers both HDMI ports as CEC playback devices
@@ -384,13 +396,14 @@ Service units launch scripts through `/bin/bash` instead of relying on executabl
 
 - **One HDMI output at a time.** True simultaneous dual output isn't possible with this design: on the Pi 4's driver, only one process can render to the display hardware at once. Supporting it would take a different architecture.
 - **HDMI changes restart the player.** Plugging in, unplugging, a TV that drops HDMI when turned off, or moving the cable restarts the display player (about 5 to 10 seconds), and playback starts from the top of the video folder. Anything started from the web UI (images, a single file) has to be started again.
-- **4K images are scaled** to the display's current mode; the output resolution is not switched.
+- **Images are scaled** to the display's current mode; the output resolution is not switched.
 - **Wifi is decided once per boot.** At boot the unit joins any saved network in range, otherwise it starts the hotspot. If a known network appears later, join it from the web UI.
 - **WPA2/WPA3 personal and open networks only.** Enterprise (802.1X username/password) networks aren't supported from the web UI.
 
 ## Roadmap
 
 - Physical buttons and a small LCD for on-device control
+- Signage player mode (scope to be defined)
 - 3D-printed case
 - Separate 4K video playlist
 - Dual HDMI output

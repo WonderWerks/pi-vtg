@@ -66,13 +66,13 @@
 <div class="panel">
   <h2>OSD</h2>
   <div class="row"><label><input type="checkbox" id="osd-enabled"> Enabled</label></div>
+  <div class="row"><label><input type="checkbox" id="osd-mode"> Show protection mode (top line)</label></div>
   <div class="row"><label><input type="checkbox" id="osd-datetime"> Show date/time</label></div>
   <div class="row"><label><input type="checkbox" id="osd-ip"> Show IP addresses</label></div>
   <div class="row"><label><input type="checkbox" id="osd-ssid"> Show SSID</label></div>
-  <div class="row"><label><input type="checkbox" id="osd-url"> Show web UI port</label></div>
+  <div class="row"><label><input type="checkbox" id="osd-url"> Add web UI port (:5000) to IPs</label></div>
   <div class="row"><label><input type="checkbox" id="osd-nowplaying"> Show now playing (video/images)</label></div>
   <div class="row"><label><input type="checkbox" id="osd-audiotrack"> Show audio track</label></div>
-  <div class="row"><label><input type="checkbox" id="osd-mode"> Show protection mode</label></div>
   <div class="row"><label><input type="checkbox" id="osd-errors"> Show errors</label></div>
   <input type="text" id="osd-custom-message" maxlength="80" placeholder="Custom message (overrides the above, max 80 chars)">
   <div class="row">
@@ -108,6 +108,10 @@
   </div>
   <div class="row">
     <button onclick="wifiCheckNow()">Run Wifi Check Now</button>
+  </div>
+  <div class="display-info" id="clock-info">Unit clock: ...</div>
+  <div class="row">
+    <button onclick="syncClock()">Sync unit clock to this device</button>
   </div>
   <div class="row">
     <button class="danger" onclick="rebootDevice()">Reboot Device</button>
@@ -148,10 +152,6 @@ function render() {
       <div class="nowplaying" id="np-${t.id}">Loading status...</div>
       ${t.id === "image" ? `
         <div class="note">Video and Images share one output — playing either one replaces what's currently showing.</div>
-        <select id="res-${t.id}" onchange="loadFiles('${t.id}')">
-          <option value="1080p">1080p images</option>
-          <option value="4k">4K images</option>
-        </select>
       ` : ""}
 
       <select id="sel-${t.id}"></select>
@@ -204,11 +204,6 @@ function render() {
   `).join("");
 }
 
-function getResolution(id) {
-  const sel = document.getElementById(`res-${id}`);
-  return sel ? sel.value : null;
-}
-
 function setStatusMsg(id, text, ok) {
   const el = document.getElementById(`status-${id}`);
   el.textContent = text;
@@ -217,8 +212,7 @@ function setStatusMsg(id, text, ok) {
 
 async function loadFiles(id) {
   try {
-    const qs = id === "image" ? `?resolution=${getResolution(id)}` : "";
-    const res = await fetch(`/api/media/${id}${qs}`);
+    const res = await fetch(`/api/media/${id}`);
     const data = await res.json();
     const sel = document.getElementById(`sel-${id}`);
     // Build options as text (not HTML) so any filename displays safely
@@ -231,7 +225,6 @@ async function loadFiles(id) {
 
 async function loadFolder(id) {
   const body = { mode: "folder" };
-  if (id === "image") body.resolution = getResolution(id);
   try {
     const res = await fetch(`/api/load/${id}`, {
       method: "POST",
@@ -250,7 +243,6 @@ async function playSelected(id) {
   const filename = sel.value;
   if (!filename) { setStatusMsg(id, "No file selected.", false); return; }
   const body = { mode: "single", filename };
-  if (id === "image") body.resolution = getResolution(id);
   try {
     const res = await fetch(`/api/load/${id}`, {
       method: "POST",
@@ -566,7 +558,12 @@ async function pollMode() {
   try {
     const res = await fetch("/api/system/mode");
     const m = await res.json();
-    const now = m.protected_now ? "PROTECTED: safe to unplug" : "WRITABLE: shut down before unplugging";
+    let now = { prot: "PROT: safe to unplug", debug: "DEBUG: writable for this boot (logs kept)",
+                maint: "MAINT: SD card writable, shut down before unplugging" }[m.mode] || m.mode;
+    if (m.mode === "maint" && m.maint_seconds_left !== null) {
+      const s = Math.floor(m.maint_seconds_left);
+      now += ` (auto-PROT in ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} if idle)`;
+    }
     let next = "";
     if (m.debug_once) next = " | Next boot: debug (writable once)";
     else if (m.protected_next_boot !== m.protected_now) next = ` | Next boot: ${m.protected_next_boot ? "protected" : "writable"}`;
@@ -709,7 +706,35 @@ async function pollWifi() {
   }
 }
 
+async function pollClock() {
+  try {
+    const res = await fetch("/api/system/time");
+    const t = await res.json();
+    const drift = Math.round(t.epoch - Date.now() / 1000);
+    document.getElementById("clock-info").textContent =
+      `Unit clock: ${t.local}` + (Math.abs(drift) > 60 ? `  (off by ${drift > 0 ? "+" : ""}${drift}s vs this device)` : "");
+  } catch (e) {
+    document.getElementById("clock-info").textContent = "Unit clock unavailable.";
+  }
+}
+
+async function syncClock() {
+  try {
+    const res = await fetch("/api/system/time", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ epoch: Math.floor(Date.now() / 1000) })
+    });
+    const data = await res.json();
+    setStatusMsg("system", data.success ? `Clock set: ${data.local}` : (data.message || "Clock sync failed."), data.success);
+    pollClock();
+  } catch (e) {
+    setStatusMsg("system", "Clock sync request failed.", false);
+  }
+}
+
 render();
+pollClock();
+setInterval(pollClock, 30000);
 loadPatterns();
 pollWifi();
 setInterval(pollWifi, 10000);

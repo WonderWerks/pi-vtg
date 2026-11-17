@@ -15,11 +15,16 @@ upsert() {
     fi
 }
 
-# $WIFI_SSID: normal client connection, higher priority
-upsert "$WIFI_SSID" \
-    connection.interface-name wlan0 802-11-wireless.ssid "$WIFI_SSID" \
-    connection.autoconnect yes connection.autoconnect-priority 10 \
-    wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$WIFI_PASSWORD"
+# $WIFI_SSID (optional): a network to know from day one, e.g. your travel
+# router. Preferred over other saved networks when several are in range.
+# Leave it blank to add networks only from the web UI.
+if [ -n "${WIFI_SSID:-}" ] && [ "$WIFI_SSID" != "changeme" ]; then
+    upsert "$WIFI_SSID" \
+        connection.interface-name wlan0 802-11-wireless.ssid "$WIFI_SSID" \
+        connection.autoconnect yes connection.autoconnect-priority 10 \
+        wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$WIFI_PASSWORD"
+fi
+[ -n "${FALLBACK_SSID:-}" ] && [ "$FALLBACK_SSID" != "changeme" ] || { echo "Set FALLBACK_SSID in secrets.env"; exit 1; }
 
 # $FALLBACK_SSID: fallback hotspot, connects if no primary connection (the watchdog brings it up manually)
 upsert "$FALLBACK_SSID" \

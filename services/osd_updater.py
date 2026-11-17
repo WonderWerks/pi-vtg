@@ -103,37 +103,47 @@ def now_playing(sock):
         return f"{name} ({fmt_time(s.get('time-pos'))} / {fmt_time(s.get('duration'))}) {state}"
     return f"{name} {state}"
 
+def mode_line(mode):
+    if mode == "prot":
+        return "Mode: PROT"
+    if mode == "debug":
+        return "Mode: DEBUG (logs for one boot)"
+    left = system_mode.maint_seconds_left()
+    timer = f" - auto-PROT in {int(left) // 60}:{int(left) % 60:02d}" if left is not None else ""
+    return f"Mode: MAINT (SD card writable){timer}"
+
 def build_status_text(cfg):
     custom = (cfg.get("custom_message") or "").strip()
     if custom:
         return custom[:MAX_MESSAGE_LEN]
 
     lines = []
+    mode = system_mode.current_mode()
+    if cfg.get("show_mode", True):
+        lines.append(mode_line(mode))
     if cfg.get("show_datetime", False):
         lines.append(datetime.now().strftime("%Y-%m-%d %H:%M"))
+
+    ssid = get_wifi_ssid()
+    fallback = get_fallback_ssid()
+    on_hotspot = bool(ssid and fallback and ssid == fallback)
+    port = f":{PORT}" if cfg.get("show_web_url", True) else ""
     if cfg.get("show_ip", True):
-        lines.append(f"eth0: {get_ip('eth0') or 'not connected'}")
-        lines.append(f"wlan0: {get_ip('wlan0') or 'not connected'}")
-    if cfg.get("show_ssid", True):
-        ssid = get_wifi_ssid()
-        fallback = get_fallback_ssid()
-        if ssid and fallback and ssid == fallback:
-            lines.append(f"SSID: {ssid} (FALLBACK HOTSPOT)")
+        eth, wlan = get_ip("eth0"), get_ip("wlan0")
+        lines.append(f"eth0: {eth + port if eth else 'not connected'}")
+        if on_hotspot:
+            lines.append(f'Hotspot: join wifi "{ssid}", then open {wlan or "10.1.1.10"}{port}')
         else:
-            lines.append(f"SSID: {ssid or 'not connected'}")
-    if cfg.get("show_web_url", True):
-        lines.append(f"Web UI port: {PORT}")
+            lines.append(f"wlan0: {wlan + port if wlan else 'not connected'}")
+    if cfg.get("show_ssid", True) and not (on_hotspot and cfg.get("show_ip", True)):
+        lines.append(f"SSID: {ssid}{' (hotspot)' if on_hotspot else ''}" if ssid else "SSID: not connected")
     if cfg.get("show_now_playing", False):
         lines.append(f"Display: {now_playing(DISPLAY_SOCKET)}")
     if cfg.get("show_audio_track", False):
         lines.append(f"Audio: {now_playing(AUDIO_SOCKET)}")
-    protected = system_mode.protected_now()
-    if cfg.get("show_mode", True):
-        lines.append("Mode: PROTECTED (safe to unplug)" if protected
-                     else "Mode: MAINTENANCE (shut down before unplugging)")
     if cfg.get("show_errors", True):
-        if not protected and not cfg.get("show_mode", True):
-            lines.append("MAINTENANCE MODE: shut down before unplugging")
+        if mode != "prot" and not cfg.get("show_mode", True):
+            lines.append(mode_line(mode))   # never hide a writable card
         for svc in ("vtg-display.service", "vtg-audio.service", "vtg-web.service"):
             if not service_active(svc):
                 lines.append(f"ERROR: {svc} not running")

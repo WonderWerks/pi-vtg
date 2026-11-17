@@ -1,0 +1,12 @@
+[Unit]
+Description=VTG maintenance-mode idle timeout (back to protected after 5 idle minutes)
+After=vtg-mode.service
+
+[Service]
+Type=simple
+ExecStart=/bin/bash /home/vtg/pi-vtg/services/maint_timeout.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

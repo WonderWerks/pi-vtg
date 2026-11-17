@@ -14,6 +14,7 @@
 #   vtg_mode.sh protect | maintenance | debug    (switches, then reboots)
 #   vtg_mode.sh persist <path>...                (save to the card now)
 #   vtg_mode.sh boot                             (run by vtg-mode.service)
+#   vtg_mode.sh settime <unix-seconds>           (set the clock)
 #
 # Uses raspi-config's overlay file system (the supported mechanism).
 
@@ -21,6 +22,7 @@ set -u
 BOOT_DIR=/boot/firmware
 CMDLINE=$BOOT_DIR/cmdline.txt
 DEBUG_FLAG=$BOOT_DIR/vtg-debug-once
+ARMED=/etc/pi-vtg-protection-armed   # set by the first "protect" (end of the build)
 LOWER=/media/root-ro   # the real SD card root while protected
 PERSIST_ALLOWED=(/home/vtg/pi-vtg/state /etc/NetworkManager/system-connections)
 
@@ -98,6 +100,7 @@ case "${1:-}" in
     protect)
         boot_rw; rm -f "$DEBUG_FLAG"
         echo "vtg_mode: enabling protected mode (can take a minute)"
+        touch "$ARMED"   # from now on, Maintenance mode times out (maint_timeout.sh)
         set_overlay 0
         do_reboot ;;
     maintenance)
@@ -117,10 +120,16 @@ case "${1:-}" in
             boot_rw; rm -f "$DEBUG_FLAG"; sync
             if ! now_protected; then
                 echo "vtg_mode: debug boot (writable, logs kept); protected again next boot"
+                touch /run/vtg-debug-boot   # read by the OSD / web UI / idle timeout
                 set_overlay 0
             fi
         fi
         status ;;
+    settime)
+        # Set the clock from the web UI's browser (seconds since 1970, UTC)
+        [[ "${2:-}" =~ ^[0-9]{10}$ ]] || die "settime: expected a Unix timestamp"
+        date -s "@$2" >/dev/null || die "settime: date failed"
+        date ;;
     *)
-        sed -n '2,17p' "$0"; exit 1 ;;
+        sed -n '2,18p' "$0"; exit 1 ;;
 esac
