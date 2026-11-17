@@ -58,6 +58,26 @@ else
 fi
 echo "$CONNECTOR" > /tmp/vtg-display-connector  # read by the web UI
 
+# Forced output mode (web UI: Display panel). Format: "<index> <edid-sha1> <label>".
+# Only used if it was picked for THIS display (same EDID) and the index
+# still exists; anything else means auto (the display's preferred mode).
+DRM_MODE=()
+MODE_FILE="$(dirname "$MEDIA_DIR")/state/display_mode"
+if [ -r "$MODE_FILE" ] && port_connected "$CONNECTOR"; then
+    read -r M_IDX M_SHA M_LABEL < "$MODE_FILE"
+    if [[ "${M_IDX:-}" =~ ^[0-9]+$ ]]; then
+        DRM_DIR=$(ls -d /sys/class/drm/card*-"$CONNECTOR" 2>/dev/null | head -1)
+        EDID_SHA=$(sha1sum "$DRM_DIR/edid" 2>/dev/null | cut -d' ' -f1)
+        N_MODES=$(grep -c . "$DRM_DIR/modes" 2>/dev/null)
+        if [ "$M_SHA" = "$EDID_SHA" ] && [ "$M_IDX" -lt "${N_MODES:-0}" ]; then
+            DRM_MODE=(--drm-mode="$M_IDX")
+            echo "VTG display: forcing output mode $M_LABEL (mode $M_IDX)"
+        else
+            echo "VTG display: saved output mode is for a different display, using auto"
+        fi
+    fi
+fi
+
 mpv --idle=yes \
     --keep-open=yes \
     --input-ipc-server="$SOCKET" \
@@ -68,7 +88,7 @@ mpv --idle=yes \
     --hwdec=auto \
     --vo=gpu \
     --gpu-context=drm \
-    --drm-connector="$CONNECTOR" \
+    --drm-connector="$CONNECTOR"     "${DRM_MODE[@]}" \
     --scale=bilinear \
     --cscale=bilinear \
     --dscale=bilinear \

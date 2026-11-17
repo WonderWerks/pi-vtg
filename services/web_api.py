@@ -162,7 +162,7 @@ def set_image_speed():
 
 STATE_DIR = MEDIA_DIR.parent / "state"
 OSD_CONFIG_PATH = STATE_DIR / "osd_config.json"
-OSD_DEFAULTS = {"enabled": True, "show_ip": True, "show_web_url": True, "show_errors": True, "show_ssid": True, "show_datetime": False, "show_now_playing": False, "show_audio_track": False, "show_mode": True, "show_display": False, "custom_message": ""}
+OSD_DEFAULTS = {"enabled": True, "show_ip": True, "show_web_url": True, "show_errors": True, "show_ssid": True, "show_datetime": False, "show_now_playing": False, "show_audio_track": False, "show_mode": True, "show_display": False, "show_display_mode": False, "custom_message": ""}
 
 @app.route("/api/osd/config", methods=["GET"])
 def get_osd_config():
@@ -316,7 +316,45 @@ def get_display_info():
     except MpvIPCError:
         pass
     out["output"] = out["connector"] + " (auto-selected)"
+    out["forced"] = dinfo.saved_mode()
     return jsonify(out)
+
+@app.route("/api/display/modes")
+def get_display_modes():
+    return jsonify({"success": True, "modes": dinfo.mode_list(), "forced": dinfo.saved_mode()})
+
+@app.route("/api/display/mode", methods=["POST"])
+def set_display_mode():
+    """Force the output resolution/refresh (or "auto"). Saved per display:
+    the choice is tied to this display's EDID, so a different display
+    always starts in auto. Restarts the display player to apply."""
+    idx = (request.json or {}).get("index")
+    if idx in (None, "", "auto"):
+        text = "auto\n"
+        desc = "auto"
+    else:
+        modes = dinfo.mode_list()
+        try:
+            mode = modes[int(idx)]
+        except (TypeError, ValueError, IndexError):
+            return jsonify({"success": False, "message": "Unknown mode"}), 400
+        sha = dinfo.edid_hash()
+        if not sha:
+            return jsonify({"success": False, "message": "Display sent no EDID; can only use auto"}), 400
+        text = f"{mode['index']} {sha} {mode['label']}\n"
+        desc = mode["label"]
+    STATE_DIR.mkdir(exist_ok=True)
+    dinfo.MODE_FILE.write_text(text)
+    ok, msg = persist(dinfo.MODE_FILE)
+    mark_command(f"set output mode {desc}")
+    try:
+        subprocess.run(["sudo", "/usr/bin/systemctl", "restart", "vtg-display.service"],
+                       check=True, capture_output=True, timeout=30)
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Saved, but player restart failed: {e}"}), 500
+    if not ok:
+        return jsonify({"success": False, "message": f"Applied, but not saved for next boot: {msg}"}), 500
+    return jsonify({"success": True, "mode": desc})
 
 @app.route("/api/display/edid.bin")
 def download_edid():

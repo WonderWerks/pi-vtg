@@ -12,6 +12,7 @@
   h1 { font-size:20px; margin:20px 0 16px; text-align:center; }
   .panel { background:#1c1c1c; border:1px solid #333; border-radius:10px; padding:18px; margin-bottom:16px; }
   h2 { font-size:17px; margin:0 0 12px; display:flex; align-items:center; gap:8px; }
+  .subhead { font-size:15px; margin:18px 0 6px; padding-top:14px; border-top:1px solid #333; }
   .nowplaying { font-size:13px; color:#9fd; margin-bottom:14px; min-height:18px; }
   .saved-row { display:flex; align-items:center; gap:8px; font-size:14px; padding:6px 0; border-top:1px solid #2a2a2a; }
   .saved-row span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -74,6 +75,7 @@
   <div class="row"><label><input type="checkbox" id="osd-nowplaying"> Show now playing (video/images)</label></div>
   <div class="row"><label><input type="checkbox" id="osd-audiotrack"> Show audio track</label></div>
   <div class="row"><label><input type="checkbox" id="osd-display"> Show display name (from EDID)</label></div>
+  <div class="row"><label><input type="checkbox" id="osd-displaymode"> Show display native resolution (from EDID)</label></div>
   <div class="row"><label><input type="checkbox" id="osd-errors"> Show errors</label></div>
   <input type="text" id="osd-custom-message" maxlength="80" placeholder="Custom message (overrides the above, max 80 chars)">
   <div class="row">
@@ -91,7 +93,7 @@
     <button onclick="wifiScan()" style="flex:0 0 auto">Scan</button>
   </div>
   <input type="text" id="wifi-hidden-ssid" placeholder="Network name (hidden network)" style="display:none">
-  <input type="password" id="wifi-password" placeholder="Password (leave empty for open networks)">
+  <input type="password" id="wifi-password" placeholder="Password (leave empty for saved/open networks)">
   <div class="row">
     <button class="primary" onclick="wifiConnect()">Connect</button>
     <button onclick="wifiHotspot()">Switch to hotspot</button>
@@ -138,6 +140,13 @@
   <details class="note"><summary>Supported modes (<span id="edid-modes-count">0</span>)</summary>
     <div id="edid-modes" style="margin-top:6px;line-height:1.6"></div></details>
   <div class="row"><a id="edid-download" href="/api/display/edid.bin" style="color:#9fd;font-size:13px;display:none">Download EDID (.bin)</a></div>
+  <div class="note">Output mode (saved for this display only; another display always starts on auto):</div>
+  <div class="row">
+    <select id="out-mode" style="flex:1;width:auto;min-width:0"><option value="auto">Auto (display's preferred mode)</option></select>
+    <button onclick="loadModes()" style="flex:0 0 auto">Refresh</button>
+    <button class="primary" onclick="applyMode()" style="flex:0 0 auto">Apply</button>
+  </div>
+  <div class="status" id="status-display"></div>
   <div id="error-summary">Checking for errors...</div>
 </div>
 
@@ -170,13 +179,6 @@ function render() {
           <input type="number" id="speed-${t.id}" value="5" min="1" step="1" placeholder="Seconds per image">
           <button onclick="applySpeed('${t.id}')">Set loop speed</button>
         </div>
-        <div class="note" style="margin-top:6px">Alignment patterns (drawn at the display's native resolution):</div>
-        <select id="pattern-name"></select>
-        <select id="pattern-aspect"></select>
-        <div class="row">
-          <label><input type="checkbox" id="pattern-hide-osd" checked> Hide OSD</label>
-          <button class="primary" onclick="showPattern()">Show pattern</button>
-        </div>
       ` : ""}
 
       ${t.id === "audio" ? `
@@ -204,6 +206,17 @@ function render() {
         <button onclick="ctl('${t.id}','next')">⏭ Next</button>
       </div>
 
+      ${t.id === "image" ? `
+        <h3 class="subhead">Alignment patterns</h3>
+        <div class="note">Drawn at the display's current resolution.</div>
+        <select id="pattern-name"></select>
+        <select id="pattern-aspect"></select>
+        <div class="row">
+          <label><input type="checkbox" id="pattern-hide-osd" checked onchange="onPatternOsdToggle()"> Hide OSD</label>
+          <button class="primary" onclick="showPattern()">Show pattern</button>
+        </div>
+      ` : ""}
+
       <div class="status" id="status-${t.id}"></div>
     </div>
   `).join("");
@@ -229,6 +242,7 @@ async function loadFiles(id) {
 }
 
 async function loadFolder(id) {
+  if (id !== "audio") patternShowing = false;
   const body = { mode: "folder" };
   try {
     const res = await fetch(`/api/load/${id}`, {
@@ -244,6 +258,7 @@ async function loadFolder(id) {
 }
 
 async function playSelected(id) {
+  if (id !== "audio") patternShowing = false;
   const sel = document.getElementById(`sel-${id}`);
   const filename = sel.value;
   if (!filename) { setStatusMsg(id, "No file selected.", false); return; }
@@ -344,6 +359,7 @@ async function onMuteToggle(id) {
 }
 
 async function ctl(id, action) {
+  if (id !== "audio") patternShowing = false;
   try {
     const res = await fetch(`/api/control/${id}/${action}`, { method: "POST" });
     const data = await res.json();
@@ -418,7 +434,7 @@ async function pollErrorsAndDisplay() {
   try {
     const res = await fetch("/api/display/info");
     const d = await res.json();
-    const out = d.width ? `${d.width}x${d.height} @ ${d.fps ? d.fps.toFixed(2) : "?"}Hz` : "idle";
+    const out = (d.width ? `${d.width}x${d.height} @ ${d.fps ? d.fps.toFixed(2) : "?"}Hz` : "idle") + (d.forced ? " (forced)" : "");
     document.getElementById("display-info").textContent = `Output: ${out} on ${d.output} (${d.status})`;
     const e = d.edid;
     const lines = [];
@@ -447,6 +463,7 @@ const OSD_FIELDS = [
   ["osd-audiotrack", "show_audio_track"],
   ["osd-mode", "show_mode"],
   ["osd-display", "show_display"],
+  ["osd-displaymode", "show_display_mode"],
   ["osd-errors", "show_errors"]
 ];
 
@@ -588,7 +605,48 @@ async function pollMode() {
   }
 }
 
+// ---- Output mode ----
+async function loadModes() {
+  const sel = document.getElementById("out-mode");
+  try {
+    const res = await fetch("/api/display/modes");
+    const d = await res.json();
+    sel.replaceChildren(new Option("Auto (display's preferred mode)", "auto"),
+      ...d.modes.map(m => new Option(m.label + (m.preferred ? "  (preferred)" : ""), m.index)));
+    sel.value = d.forced ? String(d.forced.index) : "auto";
+  } catch (e) {
+    setStatusMsg("display", "Could not read the display's modes.", false);
+  }
+}
+
+async function applyMode() {
+  const sel = document.getElementById("out-mode");
+  const label = sel.options[sel.selectedIndex].text;
+  if (!confirm(`Set output to ${label}?
+
+The player restarts (a few seconds of black). If the screen stays black, set it back to Auto here.`)) return;
+  setStatusMsg("display", "Applying...", true);
+  try {
+    const res = await fetch("/api/display/mode", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ index: sel.value })
+    });
+    const data = await res.json();
+    setStatusMsg("display", data.success ? `Output set to ${data.mode}.` : (data.message || "Failed."), data.success);
+    patternShowing = false;
+  } catch (e) {
+    setStatusMsg("display", "Request failed.", false);
+  }
+}
+
 // ---- Alignment patterns ----
+let patternShowing = false;
+
+function onPatternOsdToggle() {
+  // Apply right away if a pattern is on screen (redraws are cached, so instant)
+  if (patternShowing) showPattern();
+}
+
 async function loadPatterns() {
   try {
     const res = await fetch("/api/patterns");
@@ -612,6 +670,7 @@ async function showPattern() {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
     });
     const data = await res.json();
+    patternShowing = data.success;
     setStatusMsg("image", data.success ? `Showing pattern at ${data.size}.` : (data.message || "Pattern failed."), data.success);
   } catch (e) {
     setStatusMsg("image", "Pattern request failed.", false);
@@ -643,11 +702,11 @@ async function wifiScan() {
   }
 }
 
-async function wifiConnect() {
+async function wifiConnect(savedName) {
   const picked = document.getElementById("wifi-ssid").value;
-  const hidden = picked === HIDDEN_OPT;
-  const ssid = hidden ? document.getElementById("wifi-hidden-ssid").value.trim() : picked;
-  const password = document.getElementById("wifi-password").value;
+  const hidden = !savedName && picked === HIDDEN_OPT;
+  const ssid = savedName || (hidden ? document.getElementById("wifi-hidden-ssid").value.trim() : picked);
+  const password = savedName ? "" : document.getElementById("wifi-password").value;   // saved: uses the stored password
   if (!ssid) { setStatusMsg("wifi", "Pick or type a network first.", false); return; }
   if (!confirm(`Connect to "${ssid}"?\n\nIf you're on the hotspot, this page will disconnect. Join "${ssid}" yourself, then open the IP shown on screen.`)) return;
   try {
@@ -709,15 +768,18 @@ async function pollWifi() {
     box.replaceChildren();
     if (w.saved.length) {
       const h = document.createElement("div");
-      h.className = "note"; h.textContent = "Saved networks (joined automatically when in range):";
+      h.className = "note"; h.textContent = "Saved networks (password stored; joined automatically when in range):";
       box.append(h);
       w.saved.forEach(name => {
         const row = document.createElement("div"); row.className = "saved-row";
         const label = document.createElement("span");
         label.textContent = name + (name === w.active ? "  (connected)" : "");
+        const join = document.createElement("button"); join.textContent = "Connect";
+        join.onclick = () => wifiConnect(name);
+        join.disabled = name === w.active;
         const btn = document.createElement("button"); btn.textContent = "Forget";
         btn.onclick = () => wifiForget(name);
-        row.append(label, btn); box.append(row);
+        row.append(label, join, btn); box.append(row);
       });
     }
   } catch (e) {
@@ -755,6 +817,7 @@ render();
 pollClock();
 setInterval(pollClock, 30000);
 loadPatterns();
+loadModes();
 pollWifi();
 setInterval(pollWifi, 10000);
 pollMode();

@@ -209,14 +209,14 @@ Ethernet is always DHCP and works regardless of wifi. The web UI and SSH are rea
 | Panel | What it does |
 |---|---|
 | Video | Pick a file or play the whole folder; play/pause/stop/next/prev; loop; volume; mute |
-| Images | Pick an image or play the folder as a slideshow; set seconds per image; same transport controls. **Alignment patterns**: grid, screen framing, overscan/safe areas, crosshatch, focus, grayscale steps and solid fields, for any common aspect ratio (16:9, 16:10, 4:3, 5:4, 1.85, 1.90, 2.00, 2.35, 2.39, 21:9, 32:9), drawn at the display's native resolution |
+| Images | Pick an image or play the folder as a slideshow; set seconds per image; same transport controls. **Alignment patterns**: grid, screen framing, overscan/safe areas, crosshatch, focus, grayscale steps and solid fields, for any common aspect ratio (16:9, 16:10, 4:3, 5:4, 1.85, 1.90, 2.00, 2.35, 2.39, 21:9, 32:9), drawn at the display's current resolution |
 | Audio Test | Same controls for the 3.5mm output, plus the Mono Output toggle |
 | CEC | Power on/off and raw `cec-ctl` arguments, to either or both HDMI ports |
-| OSD | Turn OSD lines on/off (including the protection mode readout); set a custom on-screen message (max 80 characters) |
-| Wifi | Scan and join a network, forget saved networks, switch to the hotspot |
+| OSD | Turn OSD lines on/off (protection mode, IPs, SSID, now playing, display name and native resolution from EDID, errors); set a custom on-screen message (max 80 characters) |
+| Wifi | Scan and join a network; connect to or forget saved networks (passwords are stored, so a saved network needs no password); switch to the hotspot |
 | System | Restart the display or audio player, run the wifi check, sync the unit's clock to your phone/laptop, reboot |
 | Power-Pull Protection | Switch Protected / Maintenance / Debug mode; shows the Maintenance countdown |
-| Display / Errors | Current output mode and port; the display's EDID (maker, model, year, preferred mode, HDMI audio, supported modes) with a download of the raw EDID; any stopped services |
+| Display / Errors | Current output mode and port; the display's EDID (maker, model, year, preferred mode, HDMI audio, supported modes) with a download of the raw EDID; **force the output mode** (any resolution/refresh the display offers, saved for that display only, so a different display always starts on auto); any stopped services |
 
 Video and Images share one output. Starting one replaces the other.
 

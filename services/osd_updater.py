@@ -31,6 +31,7 @@ DEFAULT_CONFIG = {
     "show_errors": True,
     "show_mode": True,
     "show_display": False,
+    "show_display_mode": False,
     "custom_message": "",
 }
 
@@ -151,10 +152,17 @@ def build_status_text(cfg):
                          else "wlan0: not connected")
     if cfg.get("show_ssid", True) and not (on_hotspot and cfg.get("show_ip", True)):
         lines.append(f"SSID: {ssid}{' (hotspot)' if on_hotspot else ''}" if ssid else "SSID: not connected")
-    if cfg.get("show_display", False):
-        lines.append(f"Display: {display_info.short_label()}")
+    if cfg.get("show_display", False) or cfg.get("show_display_mode", False):
+        dinfo = display_info.info()
+        if cfg.get("show_display", False):
+            lines.append(f"Display: {display_info.short_label(dinfo)}")
+        if cfg.get("show_display_mode", False):
+            lines.append(f"Native: {display_info.native_label(dinfo)}")
+            forced = display_info.saved_mode(dinfo["connector"])
+            if forced:
+                lines.append(f"Output: {forced['label']} (forced)")
     if cfg.get("show_now_playing", False):
-        lines.append(f"Display: {now_playing(DISPLAY_SOCKET)}")
+        lines.append(f"Video: {now_playing(DISPLAY_SOCKET)}")
     if cfg.get("show_audio_track", False):
         lines.append(f"Audio: {now_playing(AUDIO_SOCKET)}")
     if cfg.get("show_errors", True):
