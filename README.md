@@ -7,7 +7,7 @@ A Raspberry Pi 4 video and audio test generator for AV technicians. Plug it into
 ## Features
 
 - **Boots straight into test signals.** Video loops on HDMI and audio loops on the 3.5mm jack within seconds of power-on.
-- **HDMI auto-detect.** Video and HDMI audio go to whichever HDMI port has a display connected. Plugging in, unplugging, or moving the cable restarts the player on the right port within a few seconds.
+- **HDMI auto-detect.** Video and HDMI audio go to whichever HDMI port has a display connected. Plugging in, unplugging, or moving the cable restarts the player on the correct port within a few seconds.
 - **Video, image, and audio test modes**, each with play/pause/stop, next/previous, looping, and volume/mute.
 - **Image slideshows** with adjustable time per image.
 - **Projector alignment patterns** (grid, framing, overscan, focus, grayscale, solid fields) for common aspect ratios, drawn at the display's native resolution.
@@ -27,7 +27,7 @@ A Raspberry Pi 4 video and audio test generator for AV technicians. Plug it into
 | Micro-HDMI to HDMI cable | One is enough; the port is auto-detected |
 | Ethernet cable | Recommended for setup |
 | 3.5mm audio cable | Optional, for line-level audio testing |
-| Case | Any Raspberry Pi 4 case. One with a fan or heatsink helps with long 4K playback |
+| Case | Any Raspberry Pi 4 case. Preferably one with a fan or heatsink |
 
 The Pi 4 has two micro-HDMI ports. In this project:
 
@@ -91,7 +91,7 @@ mkdir -p ~/pi-vtg/media/{video,audio,images} ~/pi-vtg/state
 
 Media files are not included in the repo. Copy your own in from your computer (see [Adding media](#adding-media)). At minimum, put one video in `media/video` and one audio file in `media/audio` so there's something to play on boot.
 
-**Load all your media now, during the build.** Step 9 makes the SD card read-only so the unit survives being unplugged at any time. After that, anything copied in only lives in RAM and disappears at power-off. Adding media later means switching to Maintenance mode first (see [Power-pull protection](#power-pull-protection)).
+**Load all your media now, during the build.** Step 9 makes the SD card read-only so the unit survives being unplugged at any time. Once in read-only mode, anything copied in only lives in RAM and disappears at power-off. Adding media later means switching to Maintenance mode first (see [Power-pull protection](#power-pull-protection)).
 
 ### 5. Configure wifi
 
@@ -156,7 +156,7 @@ systemctl status 'vtg-*' --no-pager
 
 `systemctl --failed` should list 0 units. Then open the web UI at `http://vtg.local:5000` (or `http://<ip>:5000`).
 
-### 9. Turn on power-pull protection (last step)
+### 9. Turn on power-pull protection
 
 Until now the SD card has been writable, so shut down properly (`sudo poweroff`) rather than pulling power. This step makes the card read-only and does the final reboot. Only run it once everything works and **all your media is loaded**:
 
@@ -170,7 +170,7 @@ It takes up to a minute, then reboots. Check it took effect:
 sudo bash ~/pi-vtg/services/vtg_mode.sh status
 ```
 
-You should see `now=protected next_boot=protected`, and the OSD's top line reads `Mode: PROT`. From here on the unit boots protected every time, and Maintenance mode times out after 5 idle minutes.
+You should see `now=protected next_boot=protected`, and the OSD's top line reads `Mode: PROTECT`. From here on the unit boots protected every time, and Maintenance mode times out after 5 idle minutes.
 
 ## Usage
 
@@ -443,7 +443,7 @@ Service units launch scripts through `/bin/bash` instead of relying on executabl
 ## Roadmap
 
 - Physical buttons and a small LCD for on-device control
-- Signage player mode (scope to be defined)
+- Signage player mode
 - 3D-printed case
 - Separate 4K video playlist
 - Dual HDMI output
