@@ -156,11 +156,15 @@ class MpvIPC:
             "display-height",
             "display-fps",
             "image-display-duration",
+            "media-title",
         ):
             try:
                 result[prop] = self.get_property(prop)
             except MpvIPCError:
                 result[prop] = None
+        # Built-in test signals (av://lavfi:...) show their name, not the graph
+        if str(result.get("path") or "").startswith("av://") and result.get("media-title"):
+            result["filename"] = result["media-title"]
         return result
 
     def close(self):

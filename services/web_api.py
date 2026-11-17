@@ -436,6 +436,31 @@ def show_pattern():
     except (MpvIPCError, OSError) as e:
         return jsonify({"success": False, "message": str(e)}), 503
 
+# ---- Built-in audio test signals -----------------------------------------
+@app.route("/api/signals")
+def list_signals():
+    import signals
+    return jsonify({"success": True, "signals": [{"id": k, "label": l} for k, l, _ in signals.SIGNALS]})
+
+@app.route("/api/signal", methods=["POST"])
+def play_signal():
+    import signals
+    sig = signals.get((request.json or {}).get("id"))
+    if not sig:
+        return jsonify({"success": False, "message": "Unknown signal"}), 400
+    label, url = sig
+    try:
+        mpv = get_mpv("audio")
+        opts = "force-media-title=" + label.replace(",", " ")
+        try:
+            mpv.command("loadfile", url, "replace", -1, opts)   # mpv 0.38+
+        except MpvIPCError:
+            mpv.command("loadfile", url, "replace", opts)       # older mpv
+        mpv.close()
+        return jsonify({"success": True, "label": label})
+    except MpvIPCError as e:
+        return jsonify({"success": False, "message": str(e)}), 503
+
 # ---- Wifi ----------------------------------------------------------------
 WIFI_SCRIPT = BASE_DIR / "services" / "wifi_ctl.sh"
 WIFI_RESULT = Path("/tmp/vtg-wifi-result")

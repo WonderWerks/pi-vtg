@@ -67,7 +67,7 @@
 <div class="panel">
   <h2>OSD</h2>
   <div class="row"><label><input type="checkbox" id="osd-enabled"> Enabled</label></div>
-  <div class="row"><label><input type="checkbox" id="osd-mode"> Show SD card mode (top line)</label></div>
+  <div class="row"><label><input type="checkbox" id="osd-mode"> Show power-pull protection mode (top line)</label></div>
   <div class="row"><label><input type="checkbox" id="osd-datetime"> Show date/time</label></div>
   <div class="row"><label><input type="checkbox" id="osd-ip"> Show IP addresses</label></div>
   <div class="row"><label><input type="checkbox" id="osd-ssid"> Show SSID</label></div>
@@ -140,7 +140,7 @@
 </div>
 
 <div class="panel">
-  <h2>SD Card Mode</h2>
+  <h2>Power-Pull Protection</h2>
   <div class="display-info" id="mode-info">Checking...</div>
   <div class="row">
     <button onclick="setMode('protect')">Read-only (safe to unplug)</button>
@@ -205,6 +205,15 @@ function render() {
         <button onclick="ctl('${t.id}','prev')">⏮ Prev</button>
         <button onclick="ctl('${t.id}','next')">⏭ Next</button>
       </div>
+
+      ${t.id === "audio" ? `
+        <h3 class="subhead">Test signals</h3>
+        <div class="note">Generated live; plays until you stop it or play something else. Play folder goes back to your files.</div>
+        <div class="row">
+          <select id="signal-name" style="flex:1;width:auto;min-width:0"></select>
+          <button class="primary" onclick="playSignal()" style="flex:0 0 auto">Play signal</button>
+        </div>
+      ` : ""}
 
       ${t.id === "image" ? `
         <h3 class="subhead">Alignment patterns</h3>
@@ -605,6 +614,30 @@ async function pollMode() {
   }
 }
 
+// ---- Audio test signals ----
+async function loadSignals() {
+  try {
+    const res = await fetch("/api/signals");
+    const data = await res.json();
+    document.getElementById("signal-name").replaceChildren(...data.signals.map(s => new Option(s.label, s.id)));
+  } catch (e) {
+    setStatusMsg("audio", "Could not load test signal list.", false);
+  }
+}
+
+async function playSignal() {
+  try {
+    const res = await fetch("/api/signal", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: document.getElementById("signal-name").value })
+    });
+    const data = await res.json();
+    setStatusMsg("audio", data.success ? `Playing ${data.label}.` : (data.message || "Signal failed."), data.success);
+  } catch (e) {
+    setStatusMsg("audio", "Signal request failed.", false);
+  }
+}
+
 // ---- Output mode ----
 async function loadModes() {
   const sel = document.getElementById("out-mode");
@@ -818,6 +851,7 @@ render();
 pollClock();
 setInterval(pollClock, 30000);
 loadPatterns();
+loadSignals();
 loadModes();
 pollWifi();
 setInterval(pollWifi, 10000);

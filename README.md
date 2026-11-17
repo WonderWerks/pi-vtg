@@ -11,6 +11,7 @@ A Raspberry Pi 4 video and audio test generator for AV technicians. Plug it into
 - **Video, image, and audio test modes**, each with play/pause/stop, next/previous, looping, and volume/mute.
 - **Image slideshows** with adjustable time per image.
 - **Projector alignment patterns** (grid, framing, overscan, focus, grayscale, solid fields) for common aspect ratios, drawn at the display's current resolution.
+- **Built-in audio test signals**: pink and white noise, 100 Hz / 1 kHz / 10 kHz tones, left-only and right-only channel ID, and a 20 Hz to 20 kHz sweep, generated live (no files needed).
 - **Mono Output toggle** that sums L+R so both channels carry the same signal (useful for feeding mono XLR inputs from the TRS jack).
 - **On-screen display (OSD)** showing the SD card mode, IP addresses, SSID, web UI port, and service errors. Optional date/time, now-playing, audio track, and display (EDID) lines. A custom message box displays any text on screen.
 - **Display info and output control.** Reads the display's EDID (maker, model, preferred mode, supported modes, HDMI audio) and can force any output resolution/refresh the display offers.
@@ -80,7 +81,7 @@ sudo apt update && sudo apt full-upgrade -y
 sudo apt install -y git mpv ffmpeg python3-flask python3-pil fonts-dejavu-core v4l-utils
 ```
 
-`v4l-utils` provides `cec-ctl`. `ffmpeg` is used to check video files and to make test audio and images (see [Free test media](#free-test-media)). NetworkManager and Avahi (`.local` names) are already included in Raspberry Pi OS.
+`v4l-utils` provides `cec-ctl`. `ffmpeg` is used to check video files and to make test images and video (see [Free test media](#free-test-media)). NetworkManager and Avahi (`.local` names) are already included in Raspberry Pi OS.
 
 ### 3. Enable wifi
 
@@ -98,7 +99,7 @@ git clone https://github.com/WonderWerks/pi-vtg.git ~/pi-vtg
 mkdir -p ~/pi-vtg/media/{video,audio,images} ~/pi-vtg/state
 ```
 
-Media files are not included in the repo. Copy your own in from your computer (see [Adding media](#adding-media)). At minimum, put one video in `media/video` and one audio file in `media/audio` so there's something to play on boot.
+Media files are not included in the repo. Copy your own in from your computer (see [Adding media](#adding-media)). At minimum, put one video in `media/video` so there's something to play on boot. Audio files are optional: the 3.5mm jack loops `media/audio` at boot, and test signals (noise, tones, sweep) are built into the web UI.
 
 **Load all your media now, during the build.** Step 9 makes the SD card read-only so the unit survives being unplugged at any time. Once in read-only mode, anything copied in only lives in RAM and disappears at power-off. Adding media later means switching to Maintenance mode first (see [SD card protection](#sd-card-protection)).
 
@@ -156,7 +157,7 @@ The last command should print `parsed OK`. Then check device access:
 
 ### 8. Verify
 
-Connect a display and wait about a minute. You should see your video looping and hear audio on the 3.5mm jack. SSH back in and run:
+Connect a display and wait about a minute. You should see your video looping, and hear audio on the 3.5mm jack if you added audio files. SSH back in and run:
 
 ```bash
 systemctl --failed
@@ -188,7 +189,7 @@ You should see `now=read-only next_boot=read-only`, and the OSD's top line reads
 | Output | Boot behavior |
 |---|---|
 | HDMI video + HDMI audio | Loops everything in `media/video` |
-| 3.5mm audio | Loops everything in `media/audio` |
+| 3.5mm audio | Loops everything in `media/audio` (silent if the folder is empty) |
 | OSD | On, showing the SD card mode, IP addresses, SSID, web UI port, and errors |
 | Wifi | Decided once per boot (see below) |
 
@@ -223,13 +224,13 @@ Ethernet is always DHCP and works regardless of wifi. The web UI and SSH are rea
 |---|---|
 | Video | Pick a file or play the whole folder; play/pause/stop/next/prev; loop; volume; mute |
 | Images | Pick an image or play the folder as a slideshow; set seconds per image; same transport controls. **Alignment patterns**: grid, screen framing, overscan/safe areas, crosshatch, focus, grayscale steps and solid fields, for any common aspect ratio (16:9, 16:10, 4:3, 5:4, 1.85, 1.90, 2.00, 2.35, 2.39, 21:9, 32:9), drawn at the display's current resolution |
-| Audio Test | Same controls for the 3.5mm output, plus the Mono Output toggle |
+| Audio Test | Same controls for the 3.5mm output, plus the Mono Output toggle. **Test signals**: pink/white noise, tones, left/right only, and a sweep, generated live; tones peak at -20 dBFS and white noise is -20 dBFS RMS (at volume 100) |
 | CEC | Power on/off and raw `cec-ctl` arguments, to either or both HDMI ports |
 | OSD | Turn OSD lines on/off (SD card mode, IPs, SSID, now playing, display name and native resolution from EDID, errors); set a custom on-screen message (max 80 characters) |
 | Display / Errors | Current output mode and port; the display's EDID (maker, model, year, preferred mode, HDMI audio, supported modes) with a download of the raw EDID; **force the output mode** (any resolution/refresh the display offers, saved for that display only, so a different display always starts on auto); any stopped services |
 | Wifi | Scan and join a network; connect to or forget saved networks (passwords are stored, so a saved network needs no password); switch to the hotspot |
 | System | Restart the display or audio player, run the wifi check, sync the unit's clock to your phone/laptop, reboot |
-| SD Card Mode | Switch Read-only / Maintenance / Debug mode; shows the Maintenance countdown |
+| Power-Pull Protection | Switch Read-only / Maintenance / Debug mode; shows the Maintenance countdown |
 
 Video and Images share one output. Starting one replaces the other.
 
@@ -246,7 +247,7 @@ scp my_test_video.mp4 vtg@vtg.local:~/pi-vtg/media/video/
 | Folder | Contents |
 |---|---|
 | `media/video` | Video files (`.mp4`, `.mkv`, etc.) |
-| `media/audio` | Audio files: pink noise, white noise, music (`.mp3`, `.flac`, `.wav`) |
+| `media/audio` | Audio files such as music or program material (`.mp3`, `.flac`, `.wav`). Noise and tones are built in. |
 | `media/images` | Still images (test patterns, slides); scaled to fit the display |
 
 Only known media extensions are played (video: mp4 m4v mkv mov avi ts m2ts mpg mpeg webm wmv; audio: mp3 flac wav m4a aac ogg opus wma aif aiff; images: png jpg jpeg bmp gif webp tif tiff). Anything else in the folder, like `Thumbs.db` or macOS `._` files, is ignored. Files appear in the web UI dropdowns right away. The boot playlists pick up new files on the next restart of that player (System panel or reboot).
@@ -271,19 +272,7 @@ The Pi 4 only plays video smoothly when its hardware decoder handles it. Anythin
 | [Jellyfin test videos](https://syd1.mirror.jellyfin.org/test-videos/) | The same short clip in many codecs, resolutions and bit rates. For the Pi 4 pick **HEVC 8-bit** (any resolution up to 4K) or **H.264** (1080p and below). Skip the AV1 and VP9 versions. |
 | [Blender open movies](https://studio.blender.org/films/) | Big Buck Bunny, Sintel, Tears of Steel, etc. (Creative Commons). Downloads are often H.264 at 4K; convert them with the ffmpeg line below. |
 
-**Make your own test audio, images, and bars-and-tone video.** These come from ffmpeg's built-in generators, so there's nothing to license. Run them on the Pi in Maintenance mode (or on any computer with ffmpeg and copy the files over).
-
-Audio (48 kHz stereo FLAC; tones peak at -20 dBFS, so set levels at the console):
-
-```bash
-cd ~/pi-vtg/media/audio
-ffmpeg -f lavfi -i "anoisesrc=color=pink:amplitude=0.25:duration=600" -ac 2 -c:a flac "Pink noise (10 min).flac"
-ffmpeg -f lavfi -i "anoisesrc=color=white:amplitude=0.25:duration=600" -ac 2 -c:a flac "White noise (10 min).flac"
-ffmpeg -f lavfi -i "aevalsrc=0.1*sin(2*PI*1000*t):s=48000:d=60" -ac 2 -c:a flac "1 kHz tone -20 dBFS.flac"
-ffmpeg -f lavfi -i "aevalsrc=0.1*sin(2*PI*1000*t)|0:s=48000:d=30" -c:a flac "Left only 1 kHz.flac"
-ffmpeg -f lavfi -i "aevalsrc=0|0.1*sin(2*PI*1000*t):s=48000:d=30" -c:a flac "Right only 1 kHz.flac"
-ffmpeg -f lavfi -i "aevalsrc=0.1*sin(2*PI*400/log(1000)*(exp(t*log(1000)/20)-1)):s=48000:d=20" -ac 2 -c:a flac "Sweep 20 Hz-20 kHz.flac"
-```
+**Make your own test images and bars-and-tone video.** These come from ffmpeg's built-in generators, so there's nothing to license. Run them on the Pi in Maintenance mode (or on any computer with ffmpeg and copy the files over). Test audio (noise, tones, sweep) is built into the web UI's Audio panel, so no audio files are needed for that.
 
 Images (built-in alignment patterns are in the web UI already; these add standard color bars):
 
@@ -383,7 +372,7 @@ The unit is built to be switched off at the wall. SD cards are easily damaged by
 | **Maintenance** | Writable | No, shut down first | Adding media, updating, changing setup |
 | **Debug** | Writable for one boot, then Read-only again | No, shut down first | Keeping the play log and system logs across a reboot |
 
-Switch from the web UI (**SD Card Mode** panel) or over SSH:
+Switch from the web UI (**Power-Pull Protection** panel) or over SSH:
 
 ```bash
 sudo bash ~/pi-vtg/services/vtg_mode.sh maintenance   # or: readonly, debug, status
@@ -436,6 +425,7 @@ pi-vtg/
 │   ├── wifi_fallback.sh   boot-time wifi decision: any saved network in range, else hotspot
 │   ├── wifi_ctl.sh        web UI wifi actions: scan, connect (with rollback), forget, hotspot
 │   ├── patterns.py        alignment pattern generator (Pillow)
+│   ├── signals.py         built-in audio test signals (noise, tones, sweep)
 │   ├── display_info.py    EDID / display mode reader
 │   ├── netcheck.py        wifi heartbeat (is the router answering?)
 │   └── vtgctl.py          debug CLI
