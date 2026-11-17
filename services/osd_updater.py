@@ -9,6 +9,7 @@ from pathlib import Path
 from mpv_ipc import MpvIPC, MpvIPCError
 import system_mode
 import display_info
+import netcheck
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_PATH = BASE_DIR / "state" / "osd_config.json"
@@ -145,7 +146,8 @@ def build_status_text(cfg):
             lines.append(f"Hotspot wifi: {ssid}")
             lines.append(f"Web UI: {wlan or '10.1.1.10'}{port}")
         elif wlan:
-            lines.append(f"wlan0: {wlan}{port}")
+            lost = ssid and netcheck.router_ok() is False
+            lines.append(f"wlan0: {wlan}{port}{' (no router)' if lost else ''}")
         else:
             wait = WIFI_DECISION_AT - system_mode.uptime()
             lines.append(f"wlan0: searching, hotspot in {int(wait)}s" if wait > 0

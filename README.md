@@ -249,6 +249,13 @@ The Pi 4 only plays video smoothly when its hardware decoder handles it. Anythin
 | H.264 above 1080p (e.g. 4K) | n/a | Stutters (no hardware support) |
 | VP9, AV1, MPEG-2, others | n/a | Stutters above SD (software only) |
 
+#### Free test media
+
+| Source | What's there |
+|---|---|
+| [Jellyfin test videos](https://syd1.mirror.jellyfin.org/test-videos/) | The same short clip in many codecs, resolutions and bit rates. For the Pi 4 pick **HEVC 8-bit** (any resolution up to 4K) or **H.264** (1080p and below). Skip the AV1 and VP9 versions. |
+| [Blender open movies](https://studio.blender.org/films/) | Big Buck Bunny, Sintel, Tears of Steel, etc. (Creative Commons). Downloads are often H.264 at 4K; convert them with the ffmpeg line below. |
+
 For 4K test video, use HEVC. Check a file before copying it over:
 
 ```bash

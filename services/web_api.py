@@ -9,6 +9,7 @@ import subprocess
 from cec_control import power_on as cec_power_on_fn, power_off as cec_power_off_fn, custom as cec_custom_fn, CEC_DEVICES
 import system_mode
 import display_info as dinfo
+import netcheck
 
 def get_ip(iface):
     try:
@@ -488,7 +489,9 @@ def wifi_status():
         last = {"age": int(time.time() - int(ts)), "message": msg}
     except (OSError, ValueError):
         pass
-    return jsonify({"success": True, "active": active, "is_hotspot": active is not None and active == hotspot,
+    is_hotspot = active is not None and active == hotspot
+    router = netcheck.router_ok() if active and not is_hotspot else None
+    return jsonify({"success": True, "active": active, "is_hotspot": is_hotspot, "router_ok": router,
                     "hotspot": hotspot, "ip": get_ip("wlan0"), "saved": sorted(saved), "last_result": last})
 
 @app.route("/api/wifi/scan")

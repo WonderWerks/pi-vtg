@@ -86,6 +86,23 @@
 </div>
 
 <div class="panel">
+  <h2>Display / Errors</h2>
+  <div class="display-info" id="display-info">Loading display info...</div>
+  <div class="note" id="edid-summary" style="white-space:pre-line;color:#ccc"></div>
+  <details class="note"><summary>Supported modes (<span id="edid-modes-count">0</span>)</summary>
+    <div id="edid-modes" style="margin-top:6px;line-height:1.6"></div></details>
+  <div class="row"><a id="edid-download" href="/api/display/edid.bin" style="color:#9fd;font-size:13px;display:none">Download EDID (.bin)</a></div>
+  <div class="note">Output mode (saved for this display only; another display always starts on auto):</div>
+  <div class="row">
+    <select id="out-mode" style="flex:1;width:auto;min-width:0"><option value="auto">Auto (display's preferred mode)</option></select>
+    <button onclick="loadModes()" style="flex:0 0 auto">Refresh</button>
+    <button class="primary" onclick="applyMode()" style="flex:0 0 auto">Apply</button>
+  </div>
+  <div class="status" id="status-display"></div>
+  <div id="error-summary">Checking for errors...</div>
+</div>
+
+<div class="panel">
   <h2>Wifi</h2>
   <div class="display-info" id="wifi-info">Checking...</div>
   <div class="row">
@@ -131,23 +148,6 @@
     <button onclick="setMode('debug')">Debug: keep logs for one boot</button>
   </div>
   <div class="status" id="status-mode"></div>
-</div>
-
-<div class="panel">
-  <h2>Display / Errors</h2>
-  <div class="display-info" id="display-info">Loading display info...</div>
-  <div class="note" id="edid-summary" style="white-space:pre-line;color:#ccc"></div>
-  <details class="note"><summary>Supported modes (<span id="edid-modes-count">0</span>)</summary>
-    <div id="edid-modes" style="margin-top:6px;line-height:1.6"></div></details>
-  <div class="row"><a id="edid-download" href="/api/display/edid.bin" style="color:#9fd;font-size:13px;display:none">Download EDID (.bin)</a></div>
-  <div class="note">Output mode (saved for this display only; another display always starts on auto):</div>
-  <div class="row">
-    <select id="out-mode" style="flex:1;width:auto;min-width:0"><option value="auto">Auto (display's preferred mode)</option></select>
-    <button onclick="loadModes()" style="flex:0 0 auto">Refresh</button>
-    <button class="primary" onclick="applyMode()" style="flex:0 0 auto">Apply</button>
-  </div>
-  <div class="status" id="status-display"></div>
-  <div id="error-summary">Checking for errors...</div>
 </div>
 
 </div>
@@ -754,7 +754,8 @@ async function pollWifi() {
     const w = await res.json();
     let info;
     if (w.is_hotspot) info = `Hotspot on: "${w.hotspot}" (${w.ip || "10.1.1.10"})`;
-    else if (w.active) info = `Connected to "${w.active}" (${w.ip || "no IP yet"})`;
+    else if (w.active) info = `Connected to "${w.active}" (${w.ip || "no IP yet"})` +
+      (w.router_ok === false ? " - router not answering, network may be gone" : "");
     else info = "Wifi not connected";
     document.getElementById("wifi-info").textContent = info;
     const r = w.last_result;
