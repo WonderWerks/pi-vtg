@@ -249,10 +249,10 @@ Ethernet is always DHCP and works regardless of wifi. The web UI and SSH are rea
 | Images | Pick an image or play the folder as a slideshow; set seconds per image; same transport controls. **Alignment patterns**: grid, screen framing, overscan/safe areas, crosshatch, focus, grayscale steps and solid fields, for any common aspect ratio (16:9, 16:10, 4:3, 5:4, 1.85, 1.90, 2.00, 2.35, 2.39, 21:9, 32:9), drawn at the display's current resolution |
 | Audio Test | Same controls for the 3.5mm output, plus the Mono Output toggle. **Test signals**: pink/white noise, tones, left/right only, and a sweep, generated live; tones peak at -20 dBFS and white noise is -20 dBFS RMS (at volume 100) |
 | CEC | Power on/off and raw `cec-ctl` arguments, to either or both HDMI ports |
-| OSD | Turn OSD lines on/off (SD card mode, IPs, SSID, now playing, display name and native resolution from EDID, errors); **Clear all** blanks the OSD, **Restore defaults** brings back the standard lines; set a custom on-screen message (max 80 characters) |
+| OSD | Turn OSD lines on/off (SD card mode, IPs, SSID, now playing, display name and native resolution from EDID, errors); **Clear all** blanks the OSD, **Restore defaults** brings back the standard lines (mode, IPs with port, SSID, errors); set a custom on-screen message (max 80 characters) |
 | Display / Errors | Current output mode and port; the display's EDID (maker, model, year, preferred mode, HDMI audio, supported modes) with a download of the raw EDID; **force the output mode** (any resolution/refresh the display offers, saved for that display only, so a different display always starts on auto); any stopped services |
 | Wifi | Scan and join a network; connect to or forget saved networks (passwords are stored, so a saved network needs no password); switch to the hotspot |
-| System | Restart the display or audio player, sync the unit's clock to your phone/laptop, reboot, power off |
+| System | Restart the video or audio player, sync the unit's clock to your phone/laptop, reboot, power off. After power off, wait for the green light to stop flashing, then unplug; a case fan powered from the Pi keeps spinning until you do. |
 | Power-Pull Protection | Switch Read-only / Maintenance / Debug mode; shows the Maintenance countdown |
 
 Video and Images share one output. Starting one replaces the other.

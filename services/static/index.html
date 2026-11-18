@@ -88,6 +88,7 @@
     <button onclick="osdClearAll()">Clear all (blank OSD)</button>
     <button onclick="osdDefaults()">Restore defaults</button>
   </div>
+  <div class="note">Defaults: mode, IP addresses (with :5000), SSID and errors on; everything else off.</div>
   <div class="status" id="status-osd"></div>
 </div>
 
@@ -129,7 +130,7 @@
 <div class="panel">
   <h2>System</h2>
   <div class="row">
-    <button onclick="restartService('display')">Restart Display Player</button>
+    <button onclick="restartService('display')">Restart Video Player</button>
     <button onclick="restartService('audio')">Restart Audio Player</button>
   </div>
   <div class="display-info" id="clock-info">Unit clock: ...</div>
@@ -578,7 +579,7 @@ async function restartService(service) {
   try {
     const res = await fetch(`/api/system/restart/${service}`, { method: "POST" });
     const data = await res.json();
-    setStatusMsg("system", data.success ? `${service} restarted.` : (data.message || "Restart failed."), data.success);
+    setStatusMsg("system", data.success ? `${service === "display" ? "Video" : "Audio"} player restarted.` : (data.message || "Restart failed."), data.success);
   } catch (e) {
     setStatusMsg("system", "Restart request failed.", false);
   }
@@ -589,7 +590,7 @@ async function powerOffDevice() {
   try {
     const res = await fetch("/api/system/poweroff", { method: "POST" });
     const data = await res.json();
-    setStatusMsg("system", data.success ? "Powering off... wait for the green light to stop flashing before unplugging." : (data.message || "Power off failed."), data.success);
+    setStatusMsg("system", data.success ? "Powering off... when the green light stops flashing it's safe to unplug. A fan powered from the Pi may keep spinning until you do." : (data.message || "Power off failed."), data.success);
   } catch (e) {
     setStatusMsg("system", "Power off request failed.", false);
   }
