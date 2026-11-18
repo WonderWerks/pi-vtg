@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/vtg-photo.jpeg" width="32%"> <img src="assets/vtg-screenshot-1.png" width="32%"> <img src="assets/vtg-screenshot-2.png" width="32%"></p>
+
 # pi-vtg
 
 A Raspberry Pi 4 video and audio test generator for AV technicians. Plug it into a display, power it on, and it starts looping test video on HDMI and test audio on the 3.5mm jack with no interaction. A web UI on port 5000 gives full control from any phone or laptop on the network.
