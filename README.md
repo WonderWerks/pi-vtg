@@ -7,12 +7,12 @@ A Raspberry Pi 4 video and audio test generator for AV technicians. Plug it into
 ## Features
 
 - **Boots straight into test signals.** Video loops on HDMI and audio loops on the 3.5mm jack within seconds of power-on.
-- **HDMI auto-detect.** Video and HDMI audio go to whichever HDMI port has a display connected. Plugging in, unplugging, or moving the cable restarts the player on the correct port within a few seconds.
+- **HDMI auto-detect.** Video and HDMI audio go to whichever HDMI port has a display connected. Plugging in, unplugging, or moving the cable restarts the player on the correct port.
 - **Video, image, and audio test modes**, each with play/pause/stop, next/previous, looping, and volume/mute.
 - **Image slideshows** with adjustable time per image.
 - **Projector alignment patterns** (grid, framing, overscan, focus, grayscale, solid fields) for common aspect ratios, drawn at the display's current resolution.
 - **Built-in audio test signals**: pink and white noise, 100 Hz / 1 kHz / 10 kHz tones, left-only and right-only channel ID, and a 20 Hz to 20 kHz sweep, generated live (no files needed).
-- **Mono Output toggle** that sums L+R so both channels carry the same signal (useful for feeding mono XLR inputs from the TRS jack).
+- **Mono Output toggle** that sums L+R so both channels carry the same signal.
 - **On-screen display (OSD)** showing the SD card mode, IP addresses, SSID, web UI port, and service errors. Optional date/time, now-playing, audio track, and display (EDID) lines. A custom message box displays any text on screen.
 - **Display info and output control.** Reads the display's EDID (maker, model, preferred mode, supported modes, HDMI audio) and can force any output resolution/refresh the display offers.
 - **HDMI-CEC** power on/off and raw `cec-ctl` commands, per port or both.
@@ -24,7 +24,7 @@ A Raspberry Pi 4 video and audio test generator for AV technicians. Plug it into
 
 | Item | Notes |
 |---|---|
-| Raspberry Pi 4 | Tested on 4GB and 1GB models |
+| Raspberry Pi 4 | Tested on 8GB and 1GB models. 1GB: see [Known limitations](#known-limitations) for 4K |
 | microSD card | 16GB or larger |
 | Power supply | Official 5V 3A USB-C recommended |
 | Micro-HDMI to HDMI cable, or a micro-HDMI to HDMI adapter plus a standard HDMI cable | One is enough; the port is auto-detected |
@@ -119,7 +119,15 @@ sudo rfkill unblock wifi
 git clone https://github.com/WonderWerks/pi-vtg.git ~/pi-vtg && mkdir -p ~/pi-vtg/media/{video,audio,images} ~/pi-vtg/state
 ```
 
-Media files are not included in the repo. Copy your own in from your computer with an SFTP app such as FileZilla; [Adding media](#adding-media) has the exact connection settings and how to set the play order. At minimum, put one video in `media/video` so there's something to play on boot. Audio files are optional: the 3.5mm jack loops `media/audio` at boot, and test signals (noise, tones, sweep) are built into the web UI.
+Media files are not included in the repo. Copy your own in from your computer with an SFTP app such as FileZilla:
+
+| Folder on the Pi | What goes in it |
+|---|---|
+| `/home/vtg/pi-vtg/media/video` | Videos (loop on HDMI at boot) |
+| `/home/vtg/pi-vtg/media/audio` | Audio files (loop on the 3.5mm jack at boot) |
+| `/home/vtg/pi-vtg/media/images` | Still images |
+
+In FileZilla connect to `sftp://vtg.local` (your hostname, or `sftp://<ip>`), username `vtg`, your Imager password, port `22`. Files play in name order, so number them to set the order: `01-`, `02-`, `03-`... [Adding media](#adding-media) has the full details. At minimum, put one video in `media/video` so there's something to play on boot. Audio files are optional: the 3.5mm jack loops `media/audio` at boot, and test signals (noise, tones, sweep) are built into the web UI.
 
 **Load all your media now, during the build.** Step 9 makes the SD card read-only so the unit survives being unplugged at any time. Once in read-only mode, anything copied in only lives in RAM and disappears at power-off. Adding media later means switching to Maintenance mode first (see [SD card protection](#sd-card-protection)).
 
@@ -138,7 +146,7 @@ Fill in the values:
 | `WIFI_SSID` / `WIFI_PASSWORD` | Optional. A network to know from the start, like your travel router. Leave blank to add networks from the web UI only. |
 | `FALLBACK_SSID` / `FALLBACK_PASSWORD` | Required. The hotspot it broadcasts when no saved network is in range (password: 8+ characters) |
 
-Put the value in quotes if it contains spaces, e.g. `WIFI_SSID="Shop Wifi"`. If it contains `$`, a backtick, or `"`, use single quotes instead: `WIFI_PASSWORD='pa$$word'`.
+**Put the value in quotes if it contains spaces**, e.g. `WIFI_SSID="Shop Wifi"`. If it contains `$`, a backtick, or `"`, use single quotes instead: `WIFI_PASSWORD='pa$$word'`.
 
 Save (Ctrl+O, Enter, Ctrl+X), then lock down the file and create the wifi profiles:
 
@@ -162,8 +170,10 @@ The unit files are symlinked rather than copied, so a `git pull` updates them to
 Keep the players' control sockets in `/tmp` from being auto-deleted (Debian 13 clears `/tmp` files older than 10 days, which would cut the web UI off from the players on a unit left running):
 
 ```bash
-echo 'x /tmp/vtg-*' | sudo tee /etc/tmpfiles.d/pi-vtg.conf
+echo 'x /tmp/vtg-*' | sudo tee /etc/tmpfiles.d/pi-vtg.conf && echo OK
 ```
+
+You should see `OK`.
 
 ### 7. Allow the web UI's restart, reboot and power-off buttons
 
@@ -177,32 +187,32 @@ The last command should print `parsed OK`. Then check device access:
 
     groups | grep -qw video && groups | grep -qw audio && groups | grep -qw render && echo "groups OK"
 
-### 8. Verify
+### 8. Note the web UI address
 
-Connect a display and wait about a minute. You should see your video looping, and hear audio on the 3.5mm jack if you added audio files. SSH back in and run:
+The services are installed but don't start until the reboot in step 9. Print the addresses the web UI will be on:
 
 ```bash
-systemctl --failed
-systemctl status 'vtg-*' --no-pager
+for i in eth0 wlan0; do ip -4 -o addr show dev $i 2>/dev/null | awk -v i=$i '{split($4,a,"/"); print i": http://"a[1]":5000"}'; done; echo "or: http://$(hostname).local:5000"
 ```
 
-`systemctl --failed` should list 0 units. Then open the web UI at `http://vtg.local:5000` (or `http://<ip>:5000`).
+The wifi address can change after the reboot if the unit joins a different network or starts its hotspot (`http://10.1.1.10:5000`). The OSD always shows the current address.
 
-### 9. Make the SD card read-only
+### 9. Make the SD card read-only and reboot
 
-Until now the SD card has been writable, so shut down properly (`sudo poweroff`) rather than pulling power. This step makes the card read-only and does the final reboot. The first time, it installs a few system packages, so the setup network must still have internet. Only run it once everything works and **all your media is loaded**:
+Until now the SD card has been writable, so shut down properly (`sudo poweroff`) rather than pulling power. This step makes the card read-only and reboots. The first time, it installs a few system packages, so the setup network must still have internet. Load your media first (step 4); adding it later means switching to Maintenance mode.
 
 ```bash
 sudo bash ~/pi-vtg/services/vtg_mode.sh readonly
 ```
 
-It takes up to a minute, then reboots. Check it took effect:
+It takes up to a minute, then reboots. Connect a display: after about a minute your first video plays, with audio on the 3.5mm jack if you added audio files. Open the web UI at the address from step 8, then SSH back in and check:
 
 ```bash
 sudo bash ~/pi-vtg/services/vtg_mode.sh status
+systemctl --failed
 ```
 
-You should see `now=read-only next_boot=read-only`, and the OSD's top line reads `Mode: READ-ONLY (safe to unplug)`. From here on the unit boots read-only every time, and Maintenance mode switches back to read-only after 11 minutes 11 seconds of no activity.
+You should see `now=read-only next_boot=read-only` and `0 loaded units listed`, and the OSD's top line reads `Mode: READ-ONLY (safe to unplug)`. If anything is missing, see [Troubleshooting](#troubleshooting). From here on the unit boots read-only every time, and Maintenance mode switches back to read-only after 11 minutes 11 seconds of no activity.
 
 ## Usage
 
@@ -478,6 +488,7 @@ Service units launch scripts through `/bin/bash` instead of relying on executabl
 
 - **One HDMI output at a time.** True simultaneous dual output isn't possible with this design: on the Pi 4's driver, only one process can render to the display hardware at once. Supporting it would take a different architecture.
 - **HDMI changes restart the player.** Plugging in, unplugging, a TV that drops HDMI when turned off, or moving the cable restarts the display player (about 5 to 10 seconds), and playback starts from the top of the video folder. Anything started from the web UI (images, a single file) has to be started again.
+- **4K on a 1GB Pi 4 is too slow.** On the 1GB model the 4K test video played at about one-fifth speed (5 seconds to play 1 second). 4K plays smoothly on the 8GB model.
 - **Images are scaled** to the current output mode. To show an image pixel-for-pixel, force a matching output mode in the Display panel.
 - **Wifi is decided once per boot.** At boot the unit joins any saved network in range, otherwise it starts the hotspot. If a known network appears later, join it from the web UI.
 - **WPA2/WPA3 personal and open networks only.** Enterprise (802.1X username/password) networks aren't supported from the web UI.
