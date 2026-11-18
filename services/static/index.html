@@ -9,6 +9,8 @@
   body { background:#111; color:#eee; font-family: system-ui, sans-serif; margin:0; padding:0 0 24px; }
   .container { max-width:600px; margin:0 auto; padding:0 16px; }
   .topbar { background:#1a1a1a; border-bottom:1px solid #333; padding:12px 16px; font-size:13px; color:#9fd; position:sticky; top:0; z-index:10; text-align:center; }
+  .badge { display:inline-block; padding:2px 8px; margin-right:10px; border-radius:4px; font-weight:600; background:#264; color:#dfd; }
+  .badge.warn { background:#753; color:#fec; }
   h1 { font-size:20px; margin:20px 0 16px; text-align:center; }
   .panel { background:#1c1c1c; border:1px solid #333; border-radius:10px; padding:18px; margin-bottom:16px; }
   h2 { font-size:17px; margin:0 0 12px; display:flex; align-items:center; gap:8px; }
@@ -41,7 +43,7 @@
 </style>
 </head>
 <body>
-<div class="topbar" id="topbar">Loading network info...</div>
+<div class="topbar"><span id="mode-badge" class="badge">MODE ?</span><span id="topbar">Loading network info...</span></div>
 <div class="container">
 <h1>DIY-VTG Control</h1>
 <div id="panels"></div>
@@ -81,6 +83,10 @@
   <div class="row">
     <button onclick="clearOsdMessage()">Clear Custom Message</button>
     <button class="primary" onclick="saveOsdConfig()">Save OSD settings</button>
+  </div>
+  <div class="row">
+    <button onclick="osdClearAll()">Clear all (blank OSD)</button>
+    <button onclick="osdDefaults()">Restore defaults</button>
   </div>
   <div class="status" id="status-osd"></div>
 </div>
@@ -126,15 +132,15 @@
     <button onclick="restartService('display')">Restart Display Player</button>
     <button onclick="restartService('audio')">Restart Audio Player</button>
   </div>
-  <div class="row">
-    <button onclick="wifiCheckNow()">Run Wifi Check Now</button>
-  </div>
   <div class="display-info" id="clock-info">Unit clock: ...</div>
   <div class="row">
     <button onclick="syncClock()">Sync unit clock to this device</button>
   </div>
   <div class="row">
     <button class="danger" onclick="rebootDevice()">Reboot Device</button>
+  </div>
+  <div class="row">
+    <button class="danger" onclick="powerOffDevice()">Power Off Device</button>
   </div>
   <div class="status" id="status-system"></div>
 </div>
@@ -192,7 +198,7 @@ function render() {
       ${t.id !== "image" ? `
       <div class="vol-row">
         <label>🔊</label>
-        <input type="range" id="vol-${t.id}" min="${t.id === 'video' ? 50 : 0}" max="100" value="100" oninput="onVolumeInput('${t.id}')">
+        <input type="range" id="vol-${t.id}" min="${t.id === 'video' ? 50 : 0}" max="100" value="100" oninput="onVolumeInput('${t.id}')" onchange="setVolume('${t.id}', true)">
         <label><input type="checkbox" id="mute-${t.id}" onchange="onMuteToggle('${t.id}')"> Mute</label>
       </div>
       ` : ""}
@@ -337,13 +343,14 @@ function onVolumeInput(id) {
   volumeDebounce[id] = setTimeout(() => setVolume(id), 150);
 }
 
-async function setVolume(id) {
+async function setVolume(id, save) {
   const level = document.getElementById(`vol-${id}`).value;
+  if (save) clearTimeout(volumeDebounce[id]);
   try {
     const res = await fetch(`/api/volume/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ level: parseInt(level) })
+      body: JSON.stringify({ level: parseInt(level), save: !!save })
     });
     const data = await res.json();
     if (!data.success) setStatusMsg(id, data.message || "Volume failed.", false);
@@ -402,6 +409,9 @@ async function pollStatus() {
       if (!data.success) { el.textContent = "Player not responding."; continue; }
       const s = data.status;
       syncCheckbox(`mute-${t.id}`, s.mute);
+      const vol = document.getElementById(`vol-${t.id}`);
+      // Follow the player's real volume (e.g. after a restart), unless the user is dragging it
+      if (vol && typeof s.volume === "number" && document.activeElement !== vol) vol.value = Math.round(s.volume);
       syncCheckbox(`loop-playlist-${t.id}`, s["loop-playlist"] && s["loop-playlist"] !== "no");
       syncCheckbox(`loop-file-${t.id}`, s["loop-file"] && s["loop-file"] !== "no");
       syncCheckbox(`mono-${t.id}`, (s.af || []).some(f => f.label === "mono"));
@@ -512,6 +522,25 @@ async function saveOsdConfig() {
   }
 }
 
+function osdClearAll() {
+  // Untick every line (Enabled stays as it is) and save
+  OSD_FIELDS.forEach(([elId, key]) => { if (key !== "enabled") document.getElementById(elId).checked = false; });
+  document.getElementById("osd-custom-message").value = "";
+  saveOsdConfig();
+}
+
+async function osdDefaults() {
+  try {
+    const res = await fetch("/api/osd/defaults");
+    const c = (await res.json()).config;
+    OSD_FIELDS.forEach(([elId, key]) => { document.getElementById(elId).checked = !!c[key]; });
+    document.getElementById("osd-custom-message").value = c.custom_message || "";
+    saveOsdConfig();
+  } catch (e) {
+    document.getElementById("status-osd").textContent = "Could not load defaults.";
+  }
+}
+
 function clearOsdMessage() {
   document.getElementById("osd-custom-message").value = "";
   saveOsdConfig();
@@ -555,13 +584,14 @@ async function restartService(service) {
   }
 }
 
-async function wifiCheckNow() {
+async function powerOffDevice() {
+  if (!confirm("Power off the VTG now?\n\nIt will not come back until you unplug and replug its power.")) return;
   try {
-    const res = await fetch("/api/system/wifi-check", { method: "POST" });
+    const res = await fetch("/api/system/poweroff", { method: "POST" });
     const data = await res.json();
-    setStatusMsg("system", data.success ? "Wifi check run." : (data.message || "Check failed."), data.success);
+    setStatusMsg("system", data.success ? "Powering off... wait for the green light to stop flashing before unplugging." : (data.message || "Power off failed."), data.success);
   } catch (e) {
-    setStatusMsg("system", "Wifi check request failed.", false);
+    setStatusMsg("system", "Power off request failed.", false);
   }
 }
 
@@ -609,8 +639,17 @@ async function pollMode() {
     else if (m.protected_next_boot !== m.protected_now) next = ` | Next boot: ${m.protected_next_boot ? "read-only" : "writable"}`;
     el.textContent = `Now: ${now}${next}`;
     el.style.color = m.protected_now ? "" : "#fc6";
+    const badge = document.getElementById("mode-badge");
+    let b = { prot: "READ-ONLY", maint: "MAINTENANCE", debug: "DEBUG" }[m.mode] || String(m.mode).toUpperCase();
+    if (m.mode === "maint" && m.maint_seconds_left !== null) {
+      const s = Math.floor(m.maint_seconds_left);
+      b += ` ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    }
+    badge.textContent = b;
+    badge.className = "badge" + (m.protected_now ? "" : " warn");
   } catch (e) {
     el.textContent = "Mode unavailable.";
+    document.getElementById("mode-badge").textContent = "MODE ?";
   }
 }
 
@@ -735,13 +774,14 @@ async function wifiScan() {
   }
 }
 
-async function wifiConnect(savedName) {
+async function wifiConnect(savedName, savedSsid) {
   const picked = document.getElementById("wifi-ssid").value;
   const hidden = !savedName && picked === HIDDEN_OPT;
   const ssid = savedName || (hidden ? document.getElementById("wifi-hidden-ssid").value.trim() : picked);
   const password = savedName ? "" : document.getElementById("wifi-password").value;   // saved: uses the stored password
   if (!ssid) { setStatusMsg("wifi", "Pick or type a network first.", false); return; }
-  if (!confirm(`Connect to "${ssid}"?\n\nIf you're on the hotspot, this page will disconnect. Join "${ssid}" yourself, then open the IP shown on screen.`)) return;
+  const shown = savedSsid || ssid;
+  if (!confirm(`Connect to "${shown}"?\n\nIf you're on the hotspot, this page will disconnect. Join "${shown}" yourself, then open the IP shown on screen.`)) return;
   try {
     const res = await fetch("/api/wifi/connect", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -749,22 +789,23 @@ async function wifiConnect(savedName) {
     });
     const data = await res.json();
     document.getElementById("wifi-password").value = "";
-    setStatusMsg("wifi", data.success ? `Connecting to ${ssid}... (up to 45 seconds)` : (data.message || "Connect failed."), data.success);
+    setStatusMsg("wifi", data.success ? `Connecting to ${shown}... (up to 45 seconds)` : (data.message || "Connect failed."), data.success);
     if (data.success) [3000, 8000, 15000, 25000, 40000, 55000].forEach(ms => setTimeout(pollWifi, ms));
   } catch (e) {
     setStatusMsg("wifi", "Connect request failed.", false);
   }
 }
 
-async function wifiForget(name) {
-  if (!confirm(`Forget "${name}"? The unit won't join it automatically any more.`)) return;
+async function wifiForget(name, label) {
+  label = label || name;
+  if (!confirm(`Forget "${label}"? The unit won't join it automatically any more.`)) return;
   try {
     const res = await fetch("/api/wifi/forget", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name })
     });
     const data = await res.json();
-    setStatusMsg("wifi", data.success ? `Forgot ${name}.` : (data.message || "Forget failed."), data.success);
+    setStatusMsg("wifi", data.success ? `Forgot ${label}.` : (data.message || "Forget failed."), data.success);
     pollWifi();
   } catch (e) {
     setStatusMsg("wifi", "Forget request failed.", false);
@@ -787,7 +828,7 @@ async function pollWifi() {
     const w = await res.json();
     let info;
     if (w.is_hotspot) info = `Hotspot on: "${w.hotspot}" (${w.ip || "10.1.1.10"})`;
-    else if (w.active) info = `Connected to "${w.active}" (${w.ip || "no IP yet"})` +
+    else if (w.active) info = `Connected to "${w.active_ssid || w.active}" (${w.ip || "no IP yet"})` +
       (w.router_ok === false ? " - router not answering, network may be gone" : "");
     else info = "Wifi not connected";
     document.getElementById("wifi-info").textContent = info;
@@ -804,15 +845,16 @@ async function pollWifi() {
       const h = document.createElement("div");
       h.className = "note"; h.textContent = "Saved networks (password stored; joined automatically when in range):";
       box.append(h);
-      w.saved.forEach(name => {
+      w.saved.forEach(({ name, ssid }) => {
+        // name = saved profile (used for Connect/Forget); ssid = what you see
         const row = document.createElement("div"); row.className = "saved-row";
         const label = document.createElement("span");
-        label.textContent = name + (name === w.active ? "  (connected)" : "");
+        label.textContent = ssid + (name === w.active ? "  (connected)" : "");
         const join = document.createElement("button"); join.textContent = "Connect";
-        join.onclick = () => wifiConnect(name);
+        join.onclick = () => wifiConnect(name, ssid);
         join.disabled = name === w.active;
         const btn = document.createElement("button"); btn.textContent = "Forget";
-        btn.onclick = () => wifiForget(name);
+        btn.onclick = () => wifiForget(name, ssid);
         row.append(label, join, btn); box.append(row);
       });
     }

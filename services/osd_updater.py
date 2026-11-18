@@ -73,6 +73,21 @@ def get_wifi_ssid():
         pass
     return None
 
+_ssid_cache = {}
+
+def profile_ssid(name):
+    """SSID for a saved profile name (Imager's profiles are 'netplan-wlan0-<SSID>')."""
+    if name not in _ssid_cache:
+        try:
+            out = subprocess.run(["nmcli", "--escape", "no", "-g", "802-11-wireless.ssid", "connection", "show", name],
+                                 capture_output=True, text=True, timeout=5).stdout.strip()
+        except Exception:
+            out = ""
+        if not out:
+            return name
+        _ssid_cache[name] = out
+    return _ssid_cache[name]
+
 def service_active(name):
     try:
         r = subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True, timeout=5)
@@ -135,9 +150,10 @@ def build_status_text(cfg):
     if cfg.get("show_datetime", False):
         lines.append(datetime.now().strftime("%Y-%m-%d %H:%M"))
 
-    ssid = get_wifi_ssid()
+    profile = get_wifi_ssid()          # active profile NAME on wlan0
     fallback = get_fallback_ssid()
-    on_hotspot = bool(ssid and fallback and ssid == fallback)
+    on_hotspot = bool(profile and fallback and profile == fallback)
+    ssid = profile_ssid(profile) if profile else None
     port = f":{PORT}" if cfg.get("show_web_url", True) else ""
     if cfg.get("show_ip", True):
         eth, wlan = get_ip("eth0"), get_ip("wlan0")

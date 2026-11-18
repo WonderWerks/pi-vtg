@@ -26,6 +26,8 @@ persist() { bash services/vtg_mode.sh persist "$NM_DIR" >/dev/null 2>&1; }
 active_con() { nmcli -t -f NAME,DEVICE connection show --active | awk -F: -v d="$WLAN" '$2==d {print $1}'; }
 profile_exists() { nmcli -g NAME connection show | grep -Fxq "$1"; }
 result() { echo "$(date +%s) $*" > "$RESULT"; chmod 644 "$RESULT"; }
+# Network name for messages (Imager's profiles are named netplan-wlan0-<SSID>)
+ssid_of() { local s; s=$(nmcli --escape no -g 802-11-wireless.ssid connection show "$1" 2>/dev/null); echo "${s:-$1}"; }
 
 case "${1:-}" in
 scan)
@@ -44,41 +46,54 @@ connect)
     [ "$SSID" != "$FALLBACK_SSID" ] || die "connect: that is the hotspot's own name"
     IFS= read -r PW || true
     PRIOR=$(active_con)
-    result "connecting $SSID"
+    # $SSID is a profile name (saved list) or a network name (scan / typed).
+    # A network already saved under another profile name (e.g. Imager's
+    # netplan-wlan0-<SSID>) reuses that profile instead of adding a duplicate.
+    PROFILE="$SSID"
+    if ! profile_exists "$PROFILE"; then
+        while IFS= read -r c; do
+            [ "$c" != "$FALLBACK_SSID" ] || continue
+            if [ "$(nmcli --escape no -g 802-11-wireless.ssid connection show "$c" 2>/dev/null)" = "$SSID" ]; then
+                PROFILE="$c"; break
+            fi
+        done < <(nmcli --escape no -g NAME connection show)
+    fi
+    SHOW=$(ssid_of "$PROFILE")
+    result "connecting $SHOW"
 
     OLD_PSK=""; EXISTED=0
-    if profile_exists "$SSID"; then
+    if profile_exists "$PROFILE"; then
         # Known network: update the password if one was given, then bring it up
         EXISTED=1
-        OLD_PSK=$(nmcli --escape no -s -g 802-11-wireless-security.psk connection show "$SSID" 2>/dev/null)
-        [ -n "$PW" ] && nmcli connection modify "$SSID" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$PW"
-        timeout 45 nmcli --wait 30 connection up "$SSID" >/dev/null 2>&1; ok=$?
+        OLD_PSK=$(nmcli --escape no -s -g 802-11-wireless-security.psk connection show "$PROFILE" 2>/dev/null)
+        [ -n "$PW" ] && nmcli connection modify "$PROFILE" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$PW"
+        timeout 45 nmcli --wait 30 connection up "$PROFILE" >/dev/null 2>&1; ok=$?
     else
-        args=(device wifi connect "$SSID" ifname "$WLAN" name "$SSID")
+        args=(device wifi connect "$SSID" ifname "$WLAN" name "$PROFILE")
         [ -n "$PW" ] && args+=(password "$PW")
         [ "$HIDDEN" = hidden ] && args+=(hidden yes)
         timeout 45 nmcli --wait 30 "${args[@]}" >/dev/null 2>&1; ok=$?
     fi
 
     if [ $ok = 0 ]; then
-        nmcli connection modify "$SSID" connection.autoconnect yes
+        nmcli connection modify "$PROFILE" connection.autoconnect yes
         persist
         ip=$(ip -4 -o addr show "$WLAN" | awk '{print $4}' | cut -d/ -f1)
-        result "ok connected to $SSID at $ip"
+        result "ok connected to $(ssid_of "$PROFILE") at $ip"
         exit 0
     fi
 
     # Failed: undo, and get the unit reachable again
     if [ $EXISTED = 1 ]; then
-        [ -n "$PW" ] && [ -n "$OLD_PSK" ] && nmcli connection modify "$SSID" wifi-sec.psk "$OLD_PSK"
+        [ -n "$PW" ] && [ -n "$OLD_PSK" ] && nmcli connection modify "$PROFILE" wifi-sec.psk "$OLD_PSK"
     else
-        profile_exists "$SSID" && nmcli connection delete id "$SSID" >/dev/null 2>&1
+        profile_exists "$PROFILE" && nmcli connection delete id "$PROFILE" >/dev/null 2>&1
     fi
-    if [ -n "$PRIOR" ] && [ "$PRIOR" != "$SSID" ] && timeout 45 nmcli --wait 30 connection up "$PRIOR" >/dev/null 2>&1; then
-        result "failed to join $SSID (wrong password or out of range); back on $PRIOR"
+    if [ -n "$PRIOR" ] && [ "$PRIOR" != "$PROFILE" ] && timeout 45 nmcli --wait 30 connection up "$PRIOR" >/dev/null 2>&1; then
+        result "failed to join $SHOW (wrong password or out of range); back on $(ssid_of "$PRIOR")"
     else
         nmcli connection up "$FALLBACK_SSID" >/dev/null 2>&1
-        result "failed to join $SSID (wrong password or out of range); hotspot $FALLBACK_SSID is back on"
+        result "failed to join $SHOW (wrong password or out of range); hotspot $FALLBACK_SSID is back on"
     fi
     exit 1
     ;;

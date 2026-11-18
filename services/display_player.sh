@@ -24,6 +24,13 @@ shopt -s nullglob nocaseglob extglob
 export LC_COLLATE=C  # same file order as the web UI's "Play folder"
 rm -f "$SOCKET"
 
+# Last volume set in the web UI (state/volume_<player>), else 100
+saved_volume() {
+    local v
+    v=$(cat "$(dirname "$MEDIA_DIR")/state/volume_$1" 2>/dev/null)
+    [[ "$v" =~ ^[0-9]{1,3}$ ]] && [ "$v" -le 100 ] && echo "$v" || echo 100
+}
+
 port_connected() {
     for f in /sys/class/drm/card*-"$1"/status; do
         [ "$(cat "$f" 2>/dev/null)" = "connected" ] && return 0
@@ -95,6 +102,7 @@ mpv --idle=yes \
     --video-sync=display-resample \
     --audio-device="alsa/hdmi:CARD=$AUDIO_CARD,DEV=0" \
     --audio-fallback-to-null=yes \
+    --volume="$(saved_volume video)" \
     --image-display-duration=5 \
     --loop-playlist=inf \
     --quiet \

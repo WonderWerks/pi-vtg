@@ -9,6 +9,13 @@ shopt -s nullglob nocaseglob extglob  # empty folder -> mpv starts idle
 export LC_COLLATE=C  # same file order as the web UI's "Play folder"
 rm -f "$SOCKET"
 
+# Last volume set in the web UI (state/volume_<player>), else 100
+saved_volume() {
+    local v
+    v=$(cat "$(dirname "$MEDIA_DIR")/state/volume_$1" 2>/dev/null)
+    [[ "$v" =~ ^[0-9]{1,3}$ ]] && [ "$v" -le 100 ] && echo "$v" || echo 100
+}
+
 # --audio-fallback-to-null: if the jack can't be opened, keep the playlist
 # running silently instead of spinning through every file.
 exec mpv --idle=yes \
@@ -16,6 +23,7 @@ exec mpv --idle=yes \
     --no-video \
     --audio-device=alsa/plughw:CARD=Headphones,DEV=0 \
     --audio-fallback-to-null=yes \
+    --volume="$(saved_volume audio)" \
     --loop-playlist=inf \
     --msg-level=vo=error \
     "$MEDIA_DIR"/audio/*.@($AUDIO_EXT)

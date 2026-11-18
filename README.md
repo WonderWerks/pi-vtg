@@ -27,7 +27,7 @@ A Raspberry Pi 4 video and audio test generator for AV technicians. Plug it into
 | Raspberry Pi 4 | Tested on 4GB and 1GB models |
 | microSD card | 16GB or larger |
 | Power supply | Official 5V 3A USB-C recommended |
-| Micro-HDMI to HDMI cable | One is enough; the port is auto-detected |
+| Micro-HDMI to HDMI cable, or a micro-HDMI to HDMI adapter plus a standard HDMI cable | One is enough; the port is auto-detected |
 | Ethernet cable | Recommended for setup |
 | 3.5mm audio cable | Optional, for line-level audio testing |
 | Case | Any Raspberry Pi 4 case. Preferably one with a fan or heatsink |
@@ -45,6 +45,16 @@ The logs and the web UI's Display panel use the Linux names for the ports:
 
 These steps take a blank microSD card to a working unit. Run every command on the Pi over SSH unless noted.
 
+**Networking at a glance.** The unit deals with up to three networks. Knowing which is which makes the steps below easier:
+
+| Network | What it's for | Needs internet? |
+|---|---|---|
+| **Setup network** (Ethernet or wifi) | Installing software (`apt`, `git`) during this build, and once more in step 9 | Yes |
+| **Control network** (your travel router, shop wifi, or Ethernet) | Reaching the web UI and SSH in the field | No, better without |
+| **Hotspot** (the unit's own wifi) | Control when no saved wifi is in range. Always at `10.1.1.10` | No |
+
+The setup network can also be your control network (e.g. a travel router with internet).
+
 ### 1. Flash the OS (on your computer)
 
 Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/):
@@ -55,16 +65,21 @@ Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/):
   - **Hostname:** something unique per unit, e.g. `vtg` or `vtg2`. Two units with the same hostname on one network will conflict.
   - **Username:** `vtg` (**required**: the service files expect `/home/vtg/pi-vtg`)
   - **Password:** your choice
-  - **Wireless LAN:** optional. Fill it in if you'll do the setup over wifi (see step 2). Otherwise leave it off; the unit's own wifi is configured in step 5.
+  - **Wireless LAN:** fill it in only if your **setup network** is wifi (see step 2). The control network and the hotspot are configured in step 5.
   - **Locale/timezone:** set yours (the OSD clock uses it)
   - **Services:** enable SSH with password authentication
 
 ### 2. Connect and update
 
-The setup needs internet access (for `apt` and `git`). Either:
+The build needs internet. Pick one setup:
 
-- **Ethernet** to a network with internet access (recommended), or
-- **Wifi** you entered in Raspberry Pi Imager in step 1. That network stays saved on the unit and appears in the web UI's saved networks. To remove it later, use **Forget** in the web UI while in Maintenance mode.
+| Setup | What to do |
+|---|---|
+| **Ethernet with internet** (simplest) | Plug in Ethernet. Nothing else needed. |
+| **Wifi with internet** (wifi set in Imager in step 1), no Ethernet | Nothing else needed. |
+| **Wifi for internet + Ethernet for SSH** on a network with no internet (e.g. a bench or AV switch) | Plug in both, then run the extra command below after logging in. |
+
+A wifi network set in Imager stays saved on the unit and appears in the web UI's saved networks. To remove it later, use **Forget** in the web UI while in Maintenance mode.
 
 Power it on and give it a minute. From your computer:
 
@@ -74,7 +89,7 @@ ssh vtg@vtg.local
 
 Use your hostname in place of `vtg`. If `.local` names don't resolve on your network, find the Pi's IP in your router and use `ssh vtg@<ip>`.
 
-**Wifi for internet, Ethernet on a network without internet** (e.g. a closed AV network used only for SSH): stop Ethernet from taking the internet route, or `apt` and `git` will fail even though `ping` works. Your SSH session may pause for a few seconds:
+**Wifi for internet + Ethernet for SSH only:** make wifi the internet route. Otherwise Ethernet takes it, and `apt` and `git` fail even though `ping` works. Your SSH session may pause for a few seconds:
 
 ```bash
 CON=$(nmcli -g GENERAL.CONNECTION device show eth0); sudo nmcli connection modify "$CON" ipv4.never-default yes ipv6.never-default yes && sudo nmcli connection up "$CON"
@@ -91,7 +106,7 @@ sudo apt install -y git mpv ffmpeg python3-flask python3-pil fonts-dejavu-core v
 
 ### 3. Enable wifi
 
-Wifi stays blocked until a country is set. Use your two-letter country code:
+Wifi stays blocked until a country is set. If you set wifi in Imager this is already done (running it again is harmless). Use your two-letter country code:
 
 ```bash
 sudo raspi-config nonint do_wifi_country US
@@ -104,7 +119,7 @@ sudo rfkill unblock wifi
 git clone https://github.com/WonderWerks/pi-vtg.git ~/pi-vtg && mkdir -p ~/pi-vtg/media/{video,audio,images} ~/pi-vtg/state
 ```
 
-Media files are not included in the repo. Copy your own in from your computer (see [Adding media](#adding-media)). At minimum, put one video in `media/video` so there's something to play on boot. Audio files are optional: the 3.5mm jack loops `media/audio` at boot, and test signals (noise, tones, sweep) are built into the web UI.
+Media files are not included in the repo. Copy your own in from your computer with an SFTP app such as FileZilla; [Adding media](#adding-media) has the exact connection settings and how to set the play order. At minimum, put one video in `media/video` so there's something to play on boot. Audio files are optional: the 3.5mm jack loops `media/audio` at boot, and test signals (noise, tones, sweep) are built into the web UI.
 
 **Load all your media now, during the build.** Step 9 makes the SD card read-only so the unit survives being unplugged at any time. Once in read-only mode, anything copied in only lives in RAM and disappears at power-off. Adding media later means switching to Maintenance mode first (see [SD card protection](#sd-card-protection)).
 
@@ -122,6 +137,8 @@ Fill in the values:
 |---|---|
 | `WIFI_SSID` / `WIFI_PASSWORD` | Optional. A network to know from the start, like your travel router. Leave blank to add networks from the web UI only. |
 | `FALLBACK_SSID` / `FALLBACK_PASSWORD` | Required. The hotspot it broadcasts when no saved network is in range (password: 8+ characters) |
+
+Put the value in quotes if it contains spaces, e.g. `WIFI_SSID="Shop Wifi"`. If it contains `$`, a backtick, or `"`, use single quotes instead: `WIFI_PASSWORD='pa$$word'`.
 
 Save (Ctrl+O, Enter, Ctrl+X), then lock down the file and create the wifi profiles:
 
@@ -148,11 +165,11 @@ Keep the players' control sockets in `/tmp` from being auto-deleted (Debian 13 c
 echo 'x /tmp/vtg-*' | sudo tee /etc/tmpfiles.d/pi-vtg.conf
 ```
 
-### 7. Allow the web UI's restart and reboot buttons
+### 7. Allow the web UI's restart, reboot and power-off buttons
 
-The web UI runs as `vtg` and needs `sudo` for exactly five commands. Grant only those:
+The web UI runs as `vtg` and needs `sudo` for exactly six commands. Grant only those:
 
-    echo 'vtg ALL=(root) NOPASSWD: /usr/bin/systemctl restart vtg-display.service, /usr/bin/systemctl restart vtg-audio.service, /usr/sbin/reboot, /usr/bin/bash /home/vtg/pi-vtg/services/vtg_mode.sh *, /usr/bin/bash /home/vtg/pi-vtg/services/wifi_ctl.sh *' | sudo tee /etc/sudoers.d/pi-vtg
+    echo 'vtg ALL=(root) NOPASSWD: /usr/bin/systemctl restart vtg-display.service, /usr/bin/systemctl restart vtg-audio.service, /usr/sbin/reboot, /usr/sbin/poweroff, /usr/bin/bash /home/vtg/pi-vtg/services/vtg_mode.sh *, /usr/bin/bash /home/vtg/pi-vtg/services/wifi_ctl.sh *' | sudo tee /etc/sudoers.d/pi-vtg
     sudo chmod 440 /etc/sudoers.d/pi-vtg
     sudo visudo -cf /etc/sudoers.d/pi-vtg
 
@@ -173,7 +190,7 @@ systemctl status 'vtg-*' --no-pager
 
 ### 9. Make the SD card read-only
 
-Until now the SD card has been writable, so shut down properly (`sudo poweroff`) rather than pulling power. This step makes the card read-only and does the final reboot. Only run it once everything works and **all your media is loaded**:
+Until now the SD card has been writable, so shut down properly (`sudo poweroff`) rather than pulling power. This step makes the card read-only and does the final reboot. The first time, it installs a few system packages, so the setup network must still have internet. Only run it once everything works and **all your media is loaded**:
 
 ```bash
 sudo bash ~/pi-vtg/services/vtg_mode.sh readonly
@@ -227,14 +244,15 @@ Ethernet is always DHCP and works regardless of wifi. The web UI and SSH are rea
 
 | Panel | What it does |
 |---|---|
-| Video | Pick a file or play the whole folder; play/pause/stop/next/prev; loop; volume; mute |
+| Top bar | Current mode (READ-ONLY, or MAINTENANCE with its countdown) and IP addresses, always visible |
+| Video | Pick a file or play the whole folder; play/pause/stop/next/prev; loop; volume (remembered across restarts); mute |
 | Images | Pick an image or play the folder as a slideshow; set seconds per image; same transport controls. **Alignment patterns**: grid, screen framing, overscan/safe areas, crosshatch, focus, grayscale steps and solid fields, for any common aspect ratio (16:9, 16:10, 4:3, 5:4, 1.85, 1.90, 2.00, 2.35, 2.39, 21:9, 32:9), drawn at the display's current resolution |
 | Audio Test | Same controls for the 3.5mm output, plus the Mono Output toggle. **Test signals**: pink/white noise, tones, left/right only, and a sweep, generated live; tones peak at -20 dBFS and white noise is -20 dBFS RMS (at volume 100) |
 | CEC | Power on/off and raw `cec-ctl` arguments, to either or both HDMI ports |
-| OSD | Turn OSD lines on/off (SD card mode, IPs, SSID, now playing, display name and native resolution from EDID, errors); set a custom on-screen message (max 80 characters) |
+| OSD | Turn OSD lines on/off (SD card mode, IPs, SSID, now playing, display name and native resolution from EDID, errors); **Clear all** blanks the OSD, **Restore defaults** brings back the standard lines; set a custom on-screen message (max 80 characters) |
 | Display / Errors | Current output mode and port; the display's EDID (maker, model, year, preferred mode, HDMI audio, supported modes) with a download of the raw EDID; **force the output mode** (any resolution/refresh the display offers, saved for that display only, so a different display always starts on auto); any stopped services |
 | Wifi | Scan and join a network; connect to or forget saved networks (passwords are stored, so a saved network needs no password); switch to the hotspot |
-| System | Restart the display or audio player, run the wifi check, sync the unit's clock to your phone/laptop, reboot |
+| System | Restart the display or audio player, sync the unit's clock to your phone/laptop, reboot, power off |
 | Power-Pull Protection | Switch Read-only / Maintenance / Debug mode; shows the Maintenance countdown |
 
 Video and Images share one output. Starting one replaces the other.
@@ -243,11 +261,24 @@ Video and Images share one output. Starting one replaces the other.
 
 If the unit is in Read-only mode, switch to **Maintenance** first or the files will vanish at power-off (see [SD card protection](#sd-card-protection)). Best practice is to load all media during the initial build.
 
-Copy files over SFTP using the same login as SSH (port 22). Use [WinSCP](https://winscp.net/) or [FileZilla](https://filezilla-project.org/), or from a terminal:
+Copy files over SFTP, using the same login as SSH. In [FileZilla](https://filezilla-project.org/) (or [WinSCP](https://winscp.net/)), fill in the quick-connect bar:
+
+| Field | Value |
+|---|---|
+| Host | `sftp://vtg.local` (your hostname), or `sftp://<ip>` |
+| Username | `vtg` |
+| Password | the password you set in Imager |
+| Port | `22` |
+
+Accept the host key the first time. Then drag files into `/home/vtg/pi-vtg/media/video`, `.../media/audio`, or `.../media/images`.
+
+From a terminal instead:
 
 ```bash
 scp my_test_video.mp4 vtg@vtg.local:~/pi-vtg/media/video/
 ```
+
+**Play order is by file name.** To set the order, start names with a number: `01-`, `02-`, ... `10-`. Use two digits, or `10-` sorts before `2-`. Numbers sort before letters, and capital letters sort before lowercase (`Zebra` plays before `apple`).
 
 | Folder | Contents |
 |---|---|
@@ -393,7 +424,7 @@ Settings changed in the web UI (OSD options, output mode, saved wifi networks) a
 
 ## Updating
 
-Updates need a writable card. Switch to Maintenance first, update, then switch back to Read-only (which reboots and starts everything fresh):
+Updates need a writable card. Switch to Maintenance first, update, then switch back to Read-only (which reboots and starts everything fresh). If an update's notes say the sudo permissions changed, re-run [step 7](#7-allow-the-web-uis-restart-reboot-and-power-off-buttons) before switching back:
 
 ```bash
 sudo bash ~/pi-vtg/services/vtg_mode.sh maintenance
@@ -458,6 +489,7 @@ Service units launch scripts through `/bin/bash` instead of relying on executabl
 - 3D-printed case
 - Separate 4K video playlist
 - Dual HDMI output
+- Raspberry Pi 3B+ support (full-size HDMI; 1080p H.264 only, no HEVC/4K)
 - Audio adapter wiring guide: 3.5mm jack to XLR, 1/4" TS/TRS, RCA, and TRRS pinouts
 
 ## License

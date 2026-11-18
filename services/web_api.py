@@ -174,6 +174,10 @@ def get_osd_config():
         cfg = dict(OSD_DEFAULTS)
     return jsonify({"success": True, "config": cfg})
 
+@app.route("/api/osd/defaults")
+def get_osd_defaults():
+    return jsonify({"success": True, "config": OSD_DEFAULTS})
+
 @app.route("/api/osd/config", methods=["POST"])
 def set_osd_config():
     STATE_DIR.mkdir(exist_ok=True)
@@ -246,17 +250,28 @@ def network_info():
 
 @app.route("/api/volume/<target>", methods=["POST"])
 def set_volume(target):
+    data = request.json or {}
     try:
-        level = int((request.json or {}).get("level"))
+        level = max(0, min(100, int(data.get("level"))))
     except (TypeError, ValueError):
         return jsonify({"success": False, "message": "Invalid level"}), 400
     try:
         mpv = get_mpv(target)
         mpv.set_volume(level)
         mpv.close()
-        return jsonify({"success": True})
     except MpvIPCError as e:
         return jsonify({"success": False, "message": str(e)}), 503
+    if data.get("save") and target in ("video", "audio"):
+        # Read by display_player.sh / audio_player.sh at start. Saved only
+        # when the slider is released, not on every step while dragging.
+        path = STATE_DIR / f"volume_{target}"
+        try:
+            STATE_DIR.mkdir(exist_ok=True)
+            path.write_text(f"{level}\n")
+            persist(path)
+        except OSError:
+            pass
+    return jsonify({"success": True})
 
 @app.route("/api/mute/<target>", methods=["POST"])
 def set_mute(target):
@@ -390,13 +405,11 @@ def restart_service(service):
     except subprocess.CalledProcessError as e:
         return jsonify({"success": False, "message": e.stderr.decode() if e.stderr else str(e)}), 500
 
-@app.route("/api/system/wifi-check", methods=["POST"])
-def wifi_check_now():
+@app.route("/api/system/poweroff", methods=["POST"])
+def system_poweroff():
+    mark_command("power off")
     try:
-        r = subprocess.run(["/bin/bash", str(BASE_DIR / "services" / "wifi_fallback.sh")],
-                           capture_output=True, text=True, timeout=45)
-        if r.returncode != 0:
-            return jsonify({"success": False, "message": (r.stderr or "wifi check failed")[-200:]}), 500
+        subprocess.Popen(["sudo", "/usr/sbin/poweroff"])
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -495,6 +508,22 @@ def fallback_ssid():
         pass
     return None
 
+_ssid_cache = {}
+
+def profile_ssid(name):
+    """The network name (SSID) a saved profile joins. Profile names can differ
+    from it (Raspberry Pi Imager's are 'netplan-wlan0-<SSID>')."""
+    if name not in _ssid_cache:
+        try:
+            out = subprocess.run(["nmcli", "--escape", "no", "-g", "802-11-wireless.ssid", "connection", "show", name],
+                                 capture_output=True, text=True, timeout=5).stdout.strip()
+        except Exception:
+            out = ""
+        if not out:
+            return name   # don't cache a failure
+        _ssid_cache[name] = out
+    return _ssid_cache[name]
+
 def wifi_script(*args, stdin=None, timeout=30):
     r = subprocess.run(["sudo", "/usr/bin/bash", str(WIFI_SCRIPT), *args], input=stdin,
                        capture_output=True, text=True, timeout=timeout)
@@ -519,7 +548,10 @@ def wifi_status():
     is_hotspot = active is not None and active == hotspot
     router = netcheck.router_ok() if active and not is_hotspot else None
     return jsonify({"success": True, "active": active, "is_hotspot": is_hotspot, "router_ok": router,
-                    "hotspot": hotspot, "ip": get_ip("wlan0"), "saved": sorted(saved), "last_result": last})
+                    "active_ssid": profile_ssid(active) if active else None,
+                    "hotspot": hotspot, "ip": get_ip("wlan0"), "last_result": last,
+                    "saved": sorted(({"name": n, "ssid": profile_ssid(n)} for n in saved),
+                                    key=lambda x: x["ssid"].lower())})
 
 @app.route("/api/wifi/scan")
 def wifi_scan():
